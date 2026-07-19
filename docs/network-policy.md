@@ -33,7 +33,17 @@ Sao aceitos somente `http` e `https`. Sao rejeitados:
 - portas fora da politica, por padrao somente 80 e 443.
 
 O DNS e resolvido antes da request e todos os IPs retornados sao validados.
-Redirects passam pela mesma politica.
+Imediatamente antes de cada tentativa de envio, o destino e revalidado de novo;
+isso bloqueia o caso em que a primeira resolucao parece publica e a segunda ja
+retorna endereco privado. Redirects passam pela mesma politica.
+
+Limite residual: o transporte padrao do `httpx` ainda faz a conexao usando o
+hostname original, portanto a pilha de rede do sistema pode resolver o nome
+novamente depois da segunda validacao feita pela aplicacao. O projeto nao
+desativa TLS, nao usa `verify=False` e nao troca HTTPS por conexao manual a IP
+fixo nesta etapa. Por isso a politica reduz a janela de DNS rebinding, mas nao
+deve ser descrita como protecao criptograficamente completa contra rebinding em
+ambientes DNS hostis.
 
 ## Timeouts e Retry
 

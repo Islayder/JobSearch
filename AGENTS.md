@@ -72,6 +72,10 @@ mypy src
 - Coletores publicos so podem usar GET/HEAD.
 - Nao implemente POST, candidatura, login, cookies de sessao, CAPTCHA, proxy, rotacao de user-agent ou Playwright.
 - Toda coleta persistida deve registrar `SourceRun`.
+- Identidade incremental de board deve usar escopo estavel de coletor e key/token/URL, nunca somente nome de empresa.
+- Snapshot parcial ou truncado nunca deve incrementar ausencia nem fechar publicacao.
+- `last_seen_at` representa a ultima execucao em que a publicacao apareceu; ausencia nao atualiza esse campo.
+- Reaparecimento deve reabrir publicacao, zerar ausencias e reavaliar a vaga quando ela nao estiver protegida por candidatura ou descarte humano.
 - Ao alterar coleta incremental, teste idempotencia, revisoes, ausencia, fechamento, reabertura e falha sem fechamento.
 - Toda regra de elegibilidade deve ter teste.
 - Preserve compatibilidade com Windows e comandos PowerShell.

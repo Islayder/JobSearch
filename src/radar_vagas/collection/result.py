@@ -20,6 +20,7 @@ class CollectionSummary:
     ineligible: int = 0
     closed: int = 0
     reopened: int = 0
+    invalid_items: int = 0
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -34,6 +35,7 @@ class CollectionSummary:
             "ineligible": self.ineligible,
             "closed": self.closed,
             "reopened": self.reopened,
+            "invalid_items": self.invalid_items,
         }
 
 

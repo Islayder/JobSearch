@@ -26,6 +26,7 @@ class CollectionContext:
     board_key: str | None = None
     board_token: str | None = None
     url: str | None = None
+    collection_scope_key: str | None = None
     dry_run: bool = False
     max_items: int | None = None
     since: datetime | None = None
@@ -67,6 +68,7 @@ class CollectionResult:
     bytes_received: int
     warnings: list[str] = field(default_factory=list)
     recoverable_errors: list[str] = field(default_factory=list)
+    invalid_items: list[dict[str, object]] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
     complete_snapshot: bool = False
     partial: bool = False

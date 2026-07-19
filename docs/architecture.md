@@ -45,9 +45,10 @@ FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
 4. `radar import-url` coleta uma unica pagina publica com JSON-LD `JobPosting`.
 5. `radar collect-board` coleta um board publico Greenhouse ou Lever.
 6. `radar collect-all` coleta os boards ativos configurados.
-7. O orquestrador registra `SourceRun`, atualiza publicacoes conhecidas, cria
-   revisoes quando conteudo muda e fecha publicacoes ausentes somente apos o
-   limite configurado de snapshots completos.
+7. O orquestrador registra `SourceRun`, isola a coleta por escopo estavel de
+   board, atualiza publicacoes conhecidas, cria revisoes quando conteudo muda e
+   fecha publicacoes ausentes somente apos o limite configurado de snapshots
+   completos.
 8. `radar evaluate-all`, `radar list-jobs`, `radar show-job`, `radar stats`,
    `radar boards` e `radar source-health` consultam ou atualizam o banco.
 
@@ -56,7 +57,8 @@ FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
 Na importacao generica, itens invalidos sao separados antes da escrita. Para os
 itens validos, a unidade de rollback e o arquivo inteiro. Na coleta publica, uma
 falha controlada registra a execucao como falha e nao incrementa ausencias nem
-fecha publicacoes.
+fecha publicacoes. Snapshots parciais por truncamento, itens invalidos ou HTTP
+304 seguem a mesma regra de nao fechamento.
 
 ## Decisoes Adiadas
 

@@ -29,6 +29,18 @@ class FakeResolver:
         return self.mapping[hostname]
 
 
+class RebindingResolver:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def resolve(self, hostname: str) -> Sequence[str]:
+        assert hostname == "public.example"
+        self.calls += 1
+        if self.calls == 1:
+            return ["93.184.216.34"]
+        return ["127.0.0.1"]
+
+
 def test_http_get_reads_valid_response() -> None:
     client = _client(lambda _request: httpx.Response(200, json={"ok": True}))
 
@@ -195,6 +207,29 @@ def test_url_policy_accepts_public_host_with_fake_dns() -> None:
     policy = UrlPolicy(resolver=FakeResolver({"jobs.example": ["93.184.216.34"]}))
 
     assert policy.validate_url("https://jobs.example/job/123") == "https://jobs.example/job/123"
+
+
+def test_http_revalidates_dns_before_send_and_blocks_rebinding() -> None:
+    resolver = RebindingResolver()
+    requests_sent = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal requests_sent
+        requests_sent += 1
+        return httpx.Response(200, json={"ok": True})
+
+    client = HttpClient(
+        HttpConfig(),
+        resolver=resolver,
+        transport=httpx.MockTransport(handler),
+        sleep=lambda _seconds: None,
+    )
+
+    with pytest.raises(ForbiddenAddressError):
+        client.get("https://public.example/jobs")
+    assert resolver.calls == 2
+    assert requests_sent == 0
+    client.close()
 
 
 def test_safe_log_payload_excludes_query_and_headers() -> None:

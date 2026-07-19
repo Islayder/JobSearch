@@ -3,16 +3,18 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from radar_vagas.canonicalization.normalize import (
     normalize_city,
     normalize_state,
     normalize_title,
+    normalize_url,
 )
 from radar_vagas.collection.contracts import CollectionContext, CollectionResult
 from radar_vagas.collection.result import CollectionExecutionReport, CollectionSummary
@@ -62,7 +64,18 @@ def build_collection_context(
     since: datetime | None = None,
     base_context: CollectionContext | None = None,
 ) -> CollectionContext:
-    source_name = _source_name(collector, company_name=company_name, url=url)
+    source_name = _source_name(
+        collector,
+        board_key=board_key,
+        board_token=board_token,
+        url=url,
+    )
+    collection_scope_key = collection_scope_key_for(
+        collector=collector,
+        board_key=board_key,
+        board_token=board_token,
+        url=url,
+    )
     if base_context is not None:
         return replace(
             base_context,
@@ -73,6 +86,7 @@ def build_collection_context(
             board_key=board_key,
             board_token=board_token,
             url=url,
+            collection_scope_key=collection_scope_key,
             dry_run=dry_run,
             max_items=max_items,
             since=since,
@@ -85,6 +99,7 @@ def build_collection_context(
         board_key=board_key,
         board_token=board_token,
         url=url,
+        collection_scope_key=collection_scope_key,
         dry_run=dry_run,
         max_items=max_items,
         since=since,
@@ -129,13 +144,13 @@ def run_collection_persistence(
     session.add(run)
     session.flush()
 
+    board = _upsert_board(session, settings, context, source, board_config)
     summary = _persist_result_items(session, settings, context, result, source, run)
     run.items_created = summary.new
-    run.items_skipped = summary.unchanged + summary.exact_duplicates
+    run.items_skipped = summary.unchanged + summary.exact_duplicates + summary.invalid_items
     run.status = SourceRunStatus.SUCCESS
     run.finished_at = utc_now()
 
-    board = _upsert_board(session, settings, context, source, board_config)
     if board is not None:
         _mark_board_success(board, run, result)
 
@@ -217,6 +232,7 @@ def _persist_result_items(
     analyses = _analyze_items(session, _parsed_from_items(context, result.items), settings)
     counters = _base_counters(result, analyses)
     seen_posting_ids: set[int] = set()
+    collection_scope_key = _collection_scope_key(context)
 
     if result.not_modified:
         return _summary_from_counters(counters)
@@ -228,13 +244,26 @@ def _persist_result_items(
             if existing.content_hash == analysis.content_hash:
                 if not existing.is_active:
                     counters["reopened"] += 1
-                _mark_posting_seen(existing, run)
+                _mark_posting_seen(
+                    session,
+                    settings,
+                    existing,
+                    run,
+                    collection_scope_key=collection_scope_key,
+                )
                 counters["unchanged"] += 1
                 continue
             if not existing.is_active:
                 counters["reopened"] += 1
             _record_revision(session, existing, analysis, run)
-            _update_existing_posting(session, settings, existing, analysis, run)
+            _update_existing_posting(
+                session,
+                settings,
+                existing,
+                analysis,
+                run,
+                collection_scope_key=collection_scope_key,
+            )
             counters["changed"] += 1
             continue
 
@@ -245,6 +274,7 @@ def _persist_result_items(
         company = _get_or_create_company(session, analysis.posting, settings)
         job, duplicate_kind = _get_or_create_job(session, company, analysis)
         posting = _create_posting(session, source, run, job, analysis)
+        posting.collection_scope_key = collection_scope_key
         posting.is_active = True
         posting.missing_count = 0
         posting.closed_reason = None
@@ -257,8 +287,7 @@ def _persist_result_items(
     if result.complete_snapshot and not result.partial:
         counters["closed"] += _increment_absences(
             session,
-            source=source,
-            run=run,
+            collection_scope_key=collection_scope_key,
             seen_posting_ids=seen_posting_ids,
             close_after=settings_close_after(context),
         )
@@ -273,13 +302,12 @@ def settings_close_after(context: CollectionContext) -> int:
 def _increment_absences(
     session: Session,
     *,
-    source: Source,
-    run: SourceRun,
+    collection_scope_key: str,
     seen_posting_ids: set[int],
     close_after: int,
 ) -> int:
     statement = select(Posting).where(
-        Posting.source_id == source.id,
+        Posting.collection_scope_key == collection_scope_key,
         Posting.is_active.is_(True),
     )
     if seen_posting_ids:
@@ -287,8 +315,6 @@ def _increment_absences(
     closed = 0
     for posting in session.scalars(statement).all():
         posting.missing_count += 1
-        posting.source_run_id = run.id
-        posting.last_seen_at = utc_now()
         if posting.missing_count < close_after:
             continue
         posting.is_active = False
@@ -342,17 +368,30 @@ def _find_existing_posting(
     )
 
 
-def _mark_posting_seen(posting: Posting, run: SourceRun) -> None:
+def _mark_posting_seen(
+    session: Session,
+    settings: Settings,
+    posting: Posting,
+    run: SourceRun,
+    *,
+    collection_scope_key: str,
+) -> None:
+    was_inactive = not posting.is_active
     posting.source_run_id = run.id
+    posting.collection_scope_key = collection_scope_key
     posting.last_seen_at = utc_now()
     posting.is_active = True
     posting.missing_count = 0
     posting.closed_reason = None
     if posting.status is PostingStatus.CLOSED:
         posting.status = PostingStatus.LINKED
-    if posting.job is not None and posting.job.status is JobStatus.CLOSED:
+    if posting.job is None or not _may_refresh_job(session, posting.job):
+        return
+    if posting.job.status is JobStatus.CLOSED:
         posting.job.status = JobStatus.NEW
         posting.job.updated_at = utc_now()
+    if was_inactive:
+        evaluate_job_record(session, posting.job, settings)
 
 
 def _record_revision(
@@ -380,9 +419,12 @@ def _update_existing_posting(
     posting: Posting,
     analysis: ItemAnalysis,
     run: SourceRun,
+    *,
+    collection_scope_key: str,
 ) -> None:
     item = analysis.posting
     posting.source_run_id = run.id
+    posting.collection_scope_key = collection_scope_key
     posting.external_id = item.external_id
     posting.original_url = item.url or item.application_url or posting.original_url
     posting.normalized_url = analysis.normalized_url
@@ -466,6 +508,9 @@ def _parsed_from_items(
 ) -> ParsedImportFile:
     parsed_items: list[ParsedImportItem] = []
     for index, item in enumerate(list(items), start=1):
+        item = item.model_copy(
+            update={"source_name": context.source_name, "source_type": context.source_type}
+        )
         raw_fields = item.model_dump(mode="json")
         parsed_items.append(
             ParsedImportItem(
@@ -498,6 +543,7 @@ def _base_counters(result: CollectionResult, analyses: list[ItemAnalysis]) -> di
         "ineligible": 0,
         "closed": 0,
         "reopened": 0,
+        "invalid_items": len(result.invalid_items),
     }
     for analysis in analyses:
         if analysis.eligibility_status is EligibilityStatus.ELIGIBLE:
@@ -522,6 +568,7 @@ def _summary_from_counters(counters: dict[str, int]) -> CollectionSummary:
         ineligible=counters["ineligible"],
         closed=counters["closed"],
         reopened=counters["reopened"],
+        invalid_items=counters["invalid_items"],
     )
 
 
@@ -549,18 +596,21 @@ def _execution_report(
         errors=result.recoverable_errors,
         metadata={
             **result.metadata,
+            "collection_scope_key": _collection_scope_key(context),
             "complete_snapshot": result.complete_snapshot,
             "partial": result.partial,
             "not_modified": result.not_modified,
             "status_code": result.status_code,
+            "invalid_item_details": result.invalid_items,
         },
     )
 
 
 def _get_or_create_source_for_context(session: Session, context: CollectionContext) -> Source:
-    slug = slugify_source_name(context.source_name)
+    slug = _collection_scope_key(context)
     source = session.scalar(select(Source).where(Source.slug == slug))
     if source is not None:
+        source.name = context.source_name
         source.source_type = context.source_type
         source.is_active = True
         source.updated_at = utc_now()
@@ -590,6 +640,7 @@ def _upsert_board(
 ) -> CompanyBoard | None:
     if board_config is None or not board_config.key:
         return None
+    collection_scope_key = _collection_scope_key(context)
     company = _get_or_create_company_by_name(session, board_config.company_name, settings)
     board = session.scalar(select(CompanyBoard).where(CompanyBoard.key == board_config.key))
     if board is None:
@@ -598,6 +649,7 @@ def _upsert_board(
             company_id=company.id,
             source_id=source.id,
             collector_type=board_config.collector,
+            collection_scope_key=collection_scope_key,
             external_identifier=board_config.board_token or board_config.url,
             board_url=board_url_for(context),
             configuration_json="{}",
@@ -605,9 +657,19 @@ def _upsert_board(
             consecutive_failures=0,
         )
         session.add(board)
+    else:
+        _migrate_exclusive_legacy_board_postings(
+            session,
+            board=board,
+            old_source_id=board.source_id,
+            old_scope_key=board.collection_scope_key,
+            new_source_id=source.id,
+            new_scope_key=collection_scope_key,
+        )
     board.company_id = company.id
     board.source_id = source.id
     board.collector_type = board_config.collector
+    board.collection_scope_key = collection_scope_key
     board.external_identifier = board_config.board_token or board_config.url
     board.board_url = board_url_for(context)
     board.configuration_json = json.dumps(
@@ -616,6 +678,44 @@ def _upsert_board(
     board.is_active = board_config.enabled
     board.disabled_reason = None if board_config.enabled else "Desativado na configuracao YAML."
     return board
+
+
+def _migrate_exclusive_legacy_board_postings(
+    session: Session,
+    *,
+    board: CompanyBoard,
+    old_source_id: int,
+    old_scope_key: str | None,
+    new_source_id: int,
+    new_scope_key: str,
+) -> None:
+    if old_source_id == new_source_id and old_scope_key == new_scope_key:
+        return
+    shared_boards = session.scalar(
+        select(func.count(CompanyBoard.id)).where(
+            CompanyBoard.source_id == old_source_id,
+            CompanyBoard.id != board.id,
+        )
+    )
+    if shared_boards:
+        return
+
+    if old_scope_key:
+        scope_filter = or_(
+            Posting.collection_scope_key.is_(None),
+            Posting.collection_scope_key == old_scope_key,
+        )
+    else:
+        scope_filter = Posting.collection_scope_key.is_(None)
+    postings = session.scalars(
+        select(Posting).where(
+            Posting.source_id == old_source_id,
+            scope_filter,
+        )
+    ).all()
+    for posting in postings:
+        posting.source_id = new_source_id
+        posting.collection_scope_key = new_scope_key
 
 
 def _get_or_create_company_by_name(
@@ -655,14 +755,65 @@ def _mark_board_failure(board: CompanyBoard, run: SourceRun) -> None:
     board.last_run_id = run.id
 
 
-def _source_name(collector: str, *, company_name: str | None, url: str | None) -> str:
-    if collector == "greenhouse":
-        return f"Greenhouse: {company_name or 'empresa'}"
-    if collector == "lever":
-        return f"Lever: {company_name or 'empresa'}"
-    if collector == "jobposting":
-        return f"JobPosting: {url or company_name or 'pagina'}"
-    return collector
+def collection_scope_key_for(
+    *,
+    collector: str,
+    board_key: str | None,
+    board_token: str | None,
+    url: str | None,
+) -> str:
+    collector_slug = slugify_source_name(collector.strip().lower())
+    if board_key:
+        raw_key = f"{collector_slug}-board-{board_key}"
+    elif board_token:
+        raw_key = f"{collector_slug}-token-{board_token}"
+    elif url:
+        raw_key = f"{collector_slug}-url-{_url_digest(url)}"
+    else:
+        raw_key = f"{collector_slug}-direct"
+    return _bounded_slug(raw_key)
+
+
+def _collection_scope_key(context: CollectionContext) -> str:
+    return context.collection_scope_key or collection_scope_key_for(
+        collector=context.collector,
+        board_key=context.board_key,
+        board_token=context.board_token,
+        url=context.url,
+    )
+
+
+def _source_name(
+    collector: str,
+    *,
+    board_key: str | None,
+    board_token: str | None,
+    url: str | None,
+) -> str:
+    label = {"greenhouse": "Greenhouse", "lever": "Lever", "jobposting": "JobPosting"}.get(
+        collector,
+        collector,
+    )
+    if board_key:
+        return f"{label} board {board_key}"
+    if board_token:
+        return f"{label} token {board_token}"
+    if url:
+        return f"{label} url {_url_digest(url)}"
+    return f"{label} direct"
+
+
+def _bounded_slug(value: str, *, max_length: int = 120) -> str:
+    slug = slugify_source_name(value)
+    if len(slug) <= max_length:
+        return slug
+    digest = sha256(slug.encode("utf-8")).hexdigest()[:12]
+    return f"{slug[: max_length - 13].rstrip('-')}-{digest}"
+
+
+def _url_digest(url: str) -> str:
+    normalized = normalize_url(url)
+    return sha256(normalized.encode("utf-8")).hexdigest()[:12]
 
 
 def _location_from_item(item: ImportedPosting) -> str:

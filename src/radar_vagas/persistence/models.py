@@ -120,6 +120,7 @@ class CompanyBoard(Base):
     __table_args__ = (
         Index("ix_company_boards_key", "key", unique=True),
         Index("ix_company_boards_collector_type", "collector_type"),
+        Index("ix_company_boards_collection_scope_key", "collection_scope_key"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -127,6 +128,7 @@ class CompanyBoard(Base):
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
     key: Mapped[str | None] = mapped_column(String(120))
     collector_type: Mapped[str | None] = mapped_column(String(80))
+    collection_scope_key: Mapped[str | None] = mapped_column(String(120))
     external_identifier: Mapped[str | None] = mapped_column(String(255))
     board_url: Mapped[str | None] = mapped_column(String(1000))
     configuration_json: Mapped[str | None] = mapped_column(Text)
@@ -154,11 +156,13 @@ class Posting(Base):
         UniqueConstraint("content_hash", name="uq_postings_content_hash"),
         Index("ix_postings_status", "status"),
         Index("ix_postings_active_missing", "is_active", "missing_count"),
+        Index("ix_postings_collection_scope_active", "collection_scope_key", "is_active"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
     source_run_id: Mapped[int | None] = mapped_column(ForeignKey("source_runs.id"), index=True)
+    collection_scope_key: Mapped[str | None] = mapped_column(String(120))
     external_id: Mapped[str | None] = mapped_column(String(255))
     original_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     normalized_url: Mapped[str] = mapped_column(String(1000), nullable=False)

@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
@@ -13,11 +13,10 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import Select, desc, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from radar_vagas.collection.contracts import CollectionContext
 from radar_vagas.collection.orchestrator import (
     build_collection_context,
     load_board_cache_headers,
@@ -244,12 +243,14 @@ def import_url_command(
         settings = _settings(ctx)
         network = load_network_config(settings.config_dir)
         client = HttpClient(network.http)
-        context = CollectionContext(
+        context = build_collection_context(
             collector="jobposting",
-            source_name=f"JobPosting: {url}",
-            source_type="jobposting",
+            company_name=None,
             url=url,
             dry_run=dry_run,
+        )
+        context = replace(
+            context,
             http_client=client,
             collection_config=network.collection,
             include_all=include_all,
@@ -703,16 +704,8 @@ def _collect_single_board(
     if not dry_run and resolved.persist:
         with session_scope(settings) as session:
             cache_etag, cache_last_modified = load_board_cache_headers(session, board.key)
-    context = CollectionContext(
+    context = build_collection_context(
         collector=board.collector,
-        source_name=build_collection_context(
-            collector=board.collector,
-            company_name=board.company_name,
-            board_key=board.key,
-            board_token=board.board_token,
-            url=board.url,
-        ).source_name,
-        source_type=board.collector,
         company_name=board.company_name,
         board_key=board.key,
         board_token=board.board_token,
@@ -720,6 +713,9 @@ def _collect_single_board(
         dry_run=dry_run,
         max_items=max_items,
         since=_parse_optional_datetime(since),
+    )
+    context = replace(
+        context,
         http_client=client,
         collection_config=network.collection,
         cache_etag=cache_etag,
@@ -810,6 +806,7 @@ def _print_collection_execution(execution: CollectionExecutionReport) -> None:
         "ineligible": "Incompativeis",
         "closed": "Encerradas",
         "reopened": "Reabertas",
+        "invalid_items": "Itens invalidos",
     }
     summary = execution.summary.to_dict()
     for key, label in labels.items():
@@ -1086,9 +1083,7 @@ def _print_boards(session: Session, boards: list[BoardConfig]) -> None:
     table.add_column("Estado")
     for board in boards:
         db_board = session.scalar(select(CompanyBoard).where(CompanyBoard.key == board.key))
-        active_postings = (
-            _active_postings_for_source(session, db_board.source_id) if db_board is not None else 0
-        )
+        active_postings = _active_postings_for_board(session, db_board) if db_board else 0
         table.add_row(
             board.key,
             board.company_name,
@@ -1132,11 +1127,11 @@ def _print_board_detail(session: Session, board_config: BoardConfig) -> None:
         )
         details.add_row(
             "Publicacoes ativas",
-            str(_active_postings_for_source(session, db_board.source_id)),
+            str(_active_postings_for_board(session, db_board)),
         )
         details.add_row(
             "Ausencias pendentes",
-            str(_pending_absences_for_source(session, db_board.source_id)),
+            str(_pending_absences_for_board(session, db_board)),
         )
     console.print(Panel(details, title="Board"))
 
@@ -1214,25 +1209,27 @@ def _print_source_health(session: Session) -> None:
         console.print("Nenhum board persistido ainda.")
 
 
-def _active_postings_for_source(session: Session, source_id: int) -> int:
+def _active_postings_for_board(session: Session, board: CompanyBoard) -> int:
+    value = session.scalar(_posting_count_statement(board, active_only=True))
+    return int(value or 0)
+
+
+def _pending_absences_for_board(session: Session, board: CompanyBoard) -> int:
     value = session.scalar(
-        select(func.count(Posting.id)).where(
-            Posting.source_id == source_id,
-            Posting.is_active.is_(True),
-        )
+        _posting_count_statement(board, active_only=True).where(Posting.missing_count > 0)
     )
     return int(value or 0)
 
 
-def _pending_absences_for_source(session: Session, source_id: int) -> int:
-    value = session.scalar(
-        select(func.count(Posting.id)).where(
-            Posting.source_id == source_id,
-            Posting.is_active.is_(True),
-            Posting.missing_count > 0,
-        )
-    )
-    return int(value or 0)
+def _posting_count_statement(board: CompanyBoard, *, active_only: bool) -> Select[tuple[int]]:
+    statement = select(func.count(Posting.id))
+    if board.collection_scope_key:
+        statement = statement.where(Posting.collection_scope_key == board.collection_scope_key)
+    else:
+        statement = statement.where(Posting.source_id == board.source_id)
+    if active_only:
+        statement = statement.where(Posting.is_active.is_(True))
+    return statement
 
 
 def _board_state(board: BoardConfig, db_board: CompanyBoard | None) -> str:
@@ -1374,7 +1371,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0003_collection_infrastructure":
+    if version == "0004_collection_scope_keys":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 

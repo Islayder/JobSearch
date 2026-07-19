@@ -63,6 +63,16 @@ boards:
 - `tags` sao normalizadas em minusculo.
 - Nenhum segredo deve ser armazenado.
 
+## Identidade e Isolamento
+
+Para coleta incremental, o board e identificado por um escopo estavel formado
+por coletor e `key`, `board_token` ou URL. O nome da empresa nao e usado como
+identidade unica. Isso permite manter dois boards da mesma empresa no mesmo
+coletor sem misturar contadores, ausencias, fechamentos ou saude da fonte.
+
+Renomear `company_name` para corrigir exibicao nao deve duplicar a fonte quando
+`key` e `board_token` continuam iguais.
+
 ## Comandos
 
 ```powershell
@@ -87,3 +97,7 @@ Para persistir um board direto no banco, use `--save-board`; isso nao altera YAM
 ```powershell
 radar collect-board greenhouse --board-token empresa --company "Empresa" --save-board empresa-greenhouse
 ```
+
+Use `--max-items` ou `--max-items-per-board` apenas para smoke tests ou
+diagnostico. Quando o payload bruto tiver mais itens que o limite, a coleta sera
+parcial e nao fechara vagas ausentes.

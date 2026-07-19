@@ -20,8 +20,9 @@ def map_greenhouse_job(
     *,
     company_name: str,
     board_token: str,
+    source_name: str,
 ) -> ImportedPosting:
-    title = as_text(job.get("title")) or "Vaga sem titulo"
+    title = as_text(job.get("title")) or ""
     location_name = _location_name(job.get("location"))
     metadata_values = _metadata_values(job.get("metadata"))
     metadata_blob = metadata_text(metadata_values)
@@ -34,7 +35,7 @@ def map_greenhouse_job(
     public_url = as_text(job.get("absolute_url"))
 
     return ImportedPosting(
-        source_name=f"Greenhouse: {company_name}",
+        source_name=source_name,
         source_type="greenhouse",
         external_id=as_text(job.get("id")),
         url=public_url,

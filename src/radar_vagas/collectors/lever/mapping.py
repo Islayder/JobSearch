@@ -20,9 +20,10 @@ def map_lever_posting(
     *,
     company_name: str,
     board_token: str,
+    source_name: str,
 ) -> ImportedPosting:
     categories = posting.get("categories") if isinstance(posting.get("categories"), dict) else {}
-    title = as_text(posting.get("text")) or "Vaga sem titulo"
+    title = as_text(posting.get("text")) or ""
     location_text = as_text(categories.get("location")) if isinstance(categories, dict) else None
     commitment = as_text(categories.get("commitment")) if isinstance(categories, dict) else None
     workplace_type = as_text(posting.get("workplaceType"))
@@ -35,7 +36,7 @@ def map_lever_posting(
 
     public_url = as_text(posting.get("hostedUrl")) or as_text(posting.get("applyUrl"))
     return ImportedPosting(
-        source_name=f"Lever: {company_name}",
+        source_name=source_name,
         source_type="lever",
         external_id=as_text(posting.get("id")),
         url=public_url,

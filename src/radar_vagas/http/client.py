@@ -84,7 +84,7 @@ class HttpClient:
             follow_redirects=False,
             timeout=timeout,
             transport=transport,
-            headers={"User-Agent": self.config.user_agent},
+            headers={"User-Agent": self.config.user_agent, "Accept-Encoding": "identity"},
         )
 
     def close(self) -> None:
@@ -125,8 +125,9 @@ class HttpClient:
             attempt = 0
             while True:
                 attempt += 1
-                requests_made += 1
                 try:
+                    current_url = self.policy.validate_url(current_url)
+                    requests_made += 1
                     response = self._send_once(method, current_url, headers=headers)
                 except httpx.TimeoutException as exc:
                     if method == "GET" and attempt <= self.config.max_retries:

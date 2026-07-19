@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -62,6 +63,17 @@ def as_text(value: Any) -> str | None:
     if isinstance(value, list):
         return ", ".join(text for item in value if (text := as_text(item)))
     return compact_text(str(value))
+
+
+def is_public_http_url_syntax(value: str | None) -> bool:
+    if not value:
+        return False
+    parts = urlsplit(value)
+    if parts.scheme.lower() not in {"http", "https"}:
+        return False
+    if not parts.hostname:
+        return False
+    return not (parts.username or parts.password)
 
 
 def metadata_text(metadata: Any) -> str:

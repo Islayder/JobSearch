@@ -59,6 +59,7 @@ def test_cli_collectors_boards_show_board_and_source_health(tmp_path: Path) -> N
 
 def test_cli_collect_board_direct_and_collect_all_dry_run(tmp_path: Path, monkeypatch) -> None:
     env = _env(tmp_path)
+    report = tmp_path / "collect-report.json"
     monkeypatch.setattr("radar_vagas.cli.app.HttpClient", _fake_http_client("greenhouse"))
     assert runner.invoke(app, ["init-db"], env=env).exit_code == 0
 
@@ -71,16 +72,61 @@ def test_cli_collect_board_direct_and_collect_all_dry_run(tmp_path: Path, monkey
             "empresa",
             "--company",
             "Empresa Exemplo",
+            "--max-items",
+            "1",
             "--dry-run",
+            "--report",
+            str(report),
         ],
         env=env,
     )
     assert direct.exit_code == 0, direct.output
     assert "Coleta" in direct.output or "Simulacao" in direct.output
+    report_data = report.read_text(encoding="utf-8")
+    assert '"partial": true' in report_data
+    assert '"complete_snapshot": false' in report_data
 
     all_result = runner.invoke(app, ["collect-all", "--dry-run"], env=env)
     assert all_result.exit_code == 0, all_result.output
     assert "empresa-greenhouse" in all_result.output
+
+
+def test_cli_source_health_keeps_same_company_boards_separate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    env = _env(tmp_path)
+    config_dir = Path(env["RADAR_CONFIG_DIR"])
+    (config_dir / "company_boards.yaml").write_text(
+        """
+boards:
+  - key: empresa-greenhouse-a
+    company_name: Empresa Exemplo
+    collector: greenhouse
+    board_token: empresa-a
+    enabled: true
+  - key: empresa-greenhouse-b
+    company_name: Empresa Exemplo
+    collector: greenhouse
+    board_token: empresa-b
+    enabled: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("radar_vagas.cli.app.HttpClient", _fake_http_client("greenhouse"))
+    assert runner.invoke(app, ["init-db"], env=env).exit_code == 0
+
+    collect = runner.invoke(app, ["collect-all"], env=env)
+    assert collect.exit_code == 0, collect.output
+
+    health = runner.invoke(app, ["source-health"], env=env)
+    boards = runner.invoke(app, ["boards"], env=env)
+    assert health.exit_code == 0, health.output
+    assert boards.exit_code == 0, boards.output
+    assert "empresa-greenhouse-a" in health.output
+    assert "empresa-greenhouse-b" in health.output
+    assert "empresa-greenhouse-a" in boards.output
+    assert "empresa-greenhouse-b" in boards.output
 
 
 def test_cli_import_url_report_file(tmp_path: Path, monkeypatch) -> None:

@@ -38,6 +38,7 @@ normalizadas do nome.
 
 - `key`
 - `collector_type`
+- `collection_scope_key`
 - `external_identifier`
 - `board_url`
 - `configuration_json`
@@ -55,9 +56,15 @@ normalizadas do nome.
 `Posting` guarda dados brutos da publicacao, URL normalizada, hash de conteudo,
 fonte e associacao opcional a `Job`. Para coleta incremental, tambem guarda:
 
+- `collection_scope_key`
 - `is_active`
 - `missing_count`
 - `closed_reason`
+
+`collection_scope_key` diferencia boards mesmo quando eles usam o mesmo coletor
+e o mesmo nome de empresa. O escopo e derivado de coletor e `key`, `board_token`
+ou URL. `company_name` fica apenas como dado auxiliar de exibicao e
+normalizacao.
 
 `PostingRevision` registra mudancas observadas em uma publicacao conhecida:
 
@@ -90,7 +97,8 @@ com Gmail nesta etapa.
 
 Publicacoes evitam duplicidade por fonte e identificador externo, fonte e URL
 normalizada, e hash de conteudo. Consultas frequentes usam indices por status,
-atividade, ausencias, tipo, modalidade, cidade, empresa e nota.
+atividade, ausencias, escopo de coleta, tipo, modalidade, cidade, empresa e
+nota.
 
 `CompanyBoard.key` e unico quando presente. Boards antigos sem key podem ser
 migrados e atualizados posteriormente.

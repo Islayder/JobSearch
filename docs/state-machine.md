@@ -15,8 +15,9 @@ stateDiagram-v2
 ```
 
 `CLOSED` em `Posting` significa que a publicacao deixou de aparecer em snapshots
-completos bem-sucedidos. Falhas, snapshots parciais e HTTP 304 nao fecham
-publicacoes.
+completos bem-sucedidos. Falhas, snapshots parciais, payload truncado, itens
+invalidos e HTTP 304 nao fecham publicacoes. Ausencia incrementa
+`missing_count`, mas nao atualiza `last_seen_at`.
 
 ## Vaga
 
@@ -35,13 +36,21 @@ stateDiagram-v2
     RECOMMENDED --> APPLIED: candidatura registrada
     APPLIED --> CLOSED: processo encerrado
     ARCHIVED --> [*]
-    CLOSED --> NEW: reaparecimento sem candidatura ou descarte humano
+    CLOSED --> ELIGIBLE: reaparecimento reavaliado
+    CLOSED --> RECOMMENDED: reaparecimento reavaliado
+    CLOSED --> PENDING_REVIEW: reaparecimento reavaliado
+    CLOSED --> ARCHIVED: reaparecimento reavaliado
     EXPIRED --> [*]
 ```
 
+Quando uma publicacao fechada reaparece, a vaga volta para avaliacao se nao
+houver candidatura, aplicacao ou descarte humano protegendo o historico. Ela nao
+fica parada em `NEW`: pode voltar como `ELIGIBLE`, `RECOMMENDED`,
+`PENDING_REVIEW` ou `ARCHIVED`, conforme regras atuais.
+
 `DISMISSED`, `APPLIED` e vagas com candidatura existente nao voltam ao ranking
-automaticamente por causa de uma mudanca de publicacao. Quando houver
-candidatura previa, a vaga passa a ser acompanhada como historico.
+automaticamente por causa de uma mudanca ou reaparecimento de publicacao.
+Quando houver candidatura previa, a vaga passa a ser acompanhada como historico.
 
 ## Candidatura
 

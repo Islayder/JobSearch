@@ -67,6 +67,10 @@ radar show-board empresa-configurada
 radar source-health
 ```
 
+Coletas Greenhouse e Lever com `--max-items` menor que o payload real sao
+relatadas como snapshots parciais. Snapshots parciais, itens invalidos, falhas e
+HTTP 304 nao fecham vagas ausentes.
+
 Avalie e consulte resultados:
 
 ```powershell
@@ -134,6 +138,8 @@ pelo Git.
 A versao atual entrega ingestao por JSON/CSV local, coleta publica por JSON-LD
 JobPosting, Greenhouse e Lever, deduplicacao deterministica, avaliacao de
 elegibilidade, ranking explicavel, auditoria de importacao/coleta e CLI.
+Boards persistidos sao isolados por escopo estavel de coletor e key/token/URL;
+o nome da empresa e apenas informacao auxiliar de exibicao.
 
 Busca global, crawling recursivo, Gmail, IA, geracao de curriculo, Playwright,
 formularios e candidatura automatica ficam fora desta etapa.

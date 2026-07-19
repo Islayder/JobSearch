@@ -24,7 +24,20 @@ arquivos JSON/CSV.
 4. O orquestrador cria `SourceRun`, detecta duplicatas, atualiza itens
    conhecidos, cria revisoes e aplica fechamento incremental quando permitido.
 5. O relatorio de coleta resume rede, encontrados, novos, conhecidos, alterados,
-   duplicados, elegibilidade e fechamentos.
+   duplicados, invalidos, elegibilidade e fechamentos.
+
+## Snapshots Completos e Parciais
+
+`complete_snapshot=true` significa que o coletor processou todo o conjunto que o
+endpoint retornou e que o resultado pode ser usado para detectar ausencias.
+
+`partial=true` significa que a coleta nao representa o board inteiro. Isso
+acontece quando `--max-items` ou `default_max_items` corta o payload bruto, ou
+quando itens invalidos precisaram ser ignorados. Nesses casos o relatorio traz
+`raw_items`, `considered_items`, `processed_items`, `invalid_items` e
+`truncated`, e o orquestrador nao incrementa ausencias nem fecha publicacoes.
+
+HTTP 304 tambem nao incrementa ausencias, porque nada foi reprocessado.
 
 ## JobPosting
 
@@ -56,6 +69,8 @@ radar collect-board greenhouse --board-token empresa --company "Empresa" --dry-r
 
 Campos mapeados: id, titulo, localidade, conteudo HTML saneado, URL publica,
 departamentos, escritorios, metadata e data de atualizacao quando presente.
+Itens sem titulo, identificador ou URL publica valida sao ignorados como erro
+recuperavel do item, sem criar titulo artificial.
 
 ## Lever
 
@@ -67,7 +82,8 @@ radar collect-board lever --board-token empresa --company "Empresa" --dry-run
 
 Campos mapeados: id, titulo, categories, commitment, equipe, departamento,
 localidade, modalidade, descricao combinada, hosted URL, apply URL e data de
-criacao.
+criacao. Itens sem titulo, identificador ou URL publica valida sao ignorados
+como erro recuperavel do item, sem criar titulo artificial.
 
 ## Adicionar Coletor Futuro
 

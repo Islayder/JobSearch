@@ -29,6 +29,12 @@ futura.
 
 Cada coleta persistida registra `SourceRun`.
 
+Para boards publicos, a identidade incremental nao depende somente do nome da
+empresa. O escopo usa coletor e `key`, `board_token` ou URL. Assim dois boards
+Greenhouse ou Lever da mesma empresa nao incrementam ausencias nem fecham vagas
+um do outro, e uma mudanca de nome exibido da empresa nao cria uma nova fonte
+quando o token/key permanece igual.
+
 Quando uma publicacao conhecida aparece igual:
 
 - nao cria duplicata;
@@ -47,15 +53,19 @@ Quando uma publicacao conhecida muda:
 Quando um item some de snapshot completo bem-sucedido:
 
 - incrementa `missing_count`;
+- preserva `last_seen_at` como a ultima execucao em que a publicacao apareceu;
 - nao fecha na primeira ausencia;
 - fecha somente apos o limite configurado em `network.yaml`;
-- nao incrementa ausencias em falha, timeout, execucao parcial ou HTTP 304.
+- nao incrementa ausencias em falha, timeout, execucao parcial, truncamento,
+  item invalido ou HTTP 304.
 
 Quando um item fechado reaparece:
 
 - reabre a publicacao;
 - zera ausencias;
-- preserva historico e candidatura existente.
+- preserva historico e candidatura existente;
+- reexecuta elegibilidade e ranking quando nao houver candidatura, aplicacao ou
+  descarte humano protegendo a vaga.
 
 ## Cache HTTP
 
