@@ -1,0 +1,17 @@
+rules_version: "2026-07-18"
+target_city: Belo Horizonte
+target_state: MG
+target_country: Brasil
+accepted_remote_country_scopes:
+  - Brasil
+  - Brazil
+  - BR
+manual_review_when_remote_scope_unknown: true
+trainee_max_onsite_hours_per_day: 6
+junior_allows_onsite: false
+metropolitan_cities_not_bh:
+  - Contagem
+  - Betim
+  - Nova Lima
+  - Ribeirão das Neves
+  - Sabará

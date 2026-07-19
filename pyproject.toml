@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "radar-vagas"
+version = "0.1.0"
+description = "Aplicação local para organizar, deduplicar, avaliar e acompanhar vagas compatíveis com um usuário."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Radar de Vagas" }]
+dependencies = [
+  "alembic>=1.13,<2",
+  "pydantic>=2.7,<3",
+  "PyYAML>=6.0,<7",
+  "rich>=13.7,<15",
+  "SQLAlchemy>=2.0,<3",
+  "typer>=0.12,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10,<2",
+  "pytest>=8.2,<9",
+  "ruff>=0.5,<1",
+  "types-PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+radar = "radar_vagas.cli.app:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/radar_vagas"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+plugins = []
+exclude = ["migrations"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true

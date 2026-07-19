@@ -1,0 +1,85 @@
+user:
+  preferred_name: Islayder
+  city: Belo Horizonte
+  state: MG
+  country: Brasil
+
+education:
+  institution: PUC Minas
+  course: Engenharia de Software
+
+opportunity_priority:
+  - internship
+  - trainee
+  - junior
+  - scholarship
+
+location_preferences:
+  priority:
+    - remote_brazil
+    - hybrid_belo_horizonte
+    - onsite_belo_horizonte
+  accepted_onsite_cities:
+    - Belo Horizonte
+  accepted_hybrid_cities:
+    - Belo Horizonte
+  treat_metro_area_as_belo_horizonte: false
+
+rules_by_type:
+  internship:
+    accept:
+      - remote_brazil
+      - hybrid_belo_horizonte
+      - onsite_belo_horizonte
+  trainee:
+    accept:
+      - remote_brazil
+      - hybrid_belo_horizonte
+      - onsite_belo_horizonte_up_to_6h
+    max_onsite_hours_per_day: 6
+  junior:
+    accept:
+      - remote_brazil
+      - hybrid_belo_horizonte
+    never_onsite: true
+  scholarship:
+    decision: manual_review
+
+interest_areas:
+  - análise de dados
+  - data analytics
+  - business intelligence
+  - BI
+  - engenharia de dados
+  - ciência de dados
+  - analytics
+  - inteligência de negócios
+  - crédito
+  - riscos
+  - planejamento
+  - CRM
+  - marketing analytics
+  - people analytics
+  - performance
+  - operações orientadas a dados
+  - automação
+  - software
+  - tecnologia
+  - inteligência de mercado
+  - prevenção a fraude
+  - pricing
+
+compensation:
+  minimum_eliminatory_value: null
+  disclosed_compensation_affects_ranking: true
+  missing_compensation_is_eliminatory: false
+
+growth:
+  accept_adjacent_areas: true
+  growth_paths:
+    - dados
+    - tecnologia
+    - analytics
+    - BI
+    - automação
+    - software

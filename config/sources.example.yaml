@@ -1,0 +1,65 @@
+sources:
+  - name: Gmail
+    slug: gmail
+    source_type: email_alert
+    base_url: null
+  - name: Importação manual
+    slug: manual-import
+    source_type: manual
+    base_url: null
+  - name: LinkedIn
+    slug: linkedin
+    source_type: discovery
+    base_url: https://www.linkedin.com/jobs
+  - name: Indeed
+    slug: indeed
+    source_type: discovery
+    base_url: https://br.indeed.com
+  - name: Gupy
+    slug: gupy
+    source_type: ats
+    base_url: https://portal.gupy.io
+  - name: Greenhouse
+    slug: greenhouse
+    source_type: ats
+    base_url: https://boards.greenhouse.io
+  - name: Lever
+    slug: lever
+    source_type: ats
+    base_url: https://jobs.lever.co
+  - name: Ashby
+    slug: ashby
+    source_type: ats
+    base_url: https://jobs.ashbyhq.com
+  - name: PUC Carreiras
+    slug: puc-carreiras
+    source_type: university
+    base_url: null
+  - name: CIEE
+    slug: ciee
+    source_type: internship_board
+    base_url: https://portal.ciee.org.br
+  - name: IEL
+    slug: iel
+    source_type: internship_board
+    base_url: null
+  - name: Nube
+    slug: nube
+    source_type: internship_board
+    base_url: https://www.nube.com.br
+  - name: Remotar
+    slug: remotar
+    source_type: remote_board
+    base_url: https://remotar.com.br
+  - name: MeuHome
+    slug: meuhome
+    source_type: remote_board
+    base_url: null
+  - name: Pandapé
+    slug: pandape
+    source_type: ats
+    base_url: https://www.pandape.com.br
+  - name: Vagas.com
+    slug: vagas-com
+    source_type: job_board
+    base_url: https://www.vagas.com.br

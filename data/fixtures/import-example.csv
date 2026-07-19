@@ -1,0 +1,4 @@
+fonte;tipo_vaga;modalidade;cargo;empresa;localização;descricao;cidade;estado;país;external_id;link;benefícios;bolsa;published_at
+Importação CSV;estagio;home office;Estágio em BI;Empresa CSV Dados;Remoto - Brasil;Estágio remoto no Brasil com BI e dados;;;Brasil;csv-001;https://jobs.example.test/csv/1;vale refeição|auxílio internet;1400;2026-07-18T09:00:00Z
+Importação CSV;trainee;hibrido;Trainee em Dados;Empresa CSV Analytics;Belo Horizonte, MG;Trainee híbrido em Belo Horizonte;Belo Horizonte;MG;Brasil;csv-002;https://jobs.example.test/csv/2;plano de saúde;3000;2026-07-17T09:00:00Z
+Importação CSV;junior;presencial;Analista Junior de Dados;Empresa CSV Software;Belo Horizonte, MG;Júnior presencial em BH para validação;Belo Horizonte;MG;Brasil;csv-003;https://jobs.example.test/csv/3;;4200;2026-07-16T09:00:00Z

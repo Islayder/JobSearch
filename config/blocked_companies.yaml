@@ -1,0 +1,13 @@
+# Lista real de empresas bloqueadas.
+# Mantenha vazia até que nomes reais sejam informados pelo usuário.
+#
+# Formato esperado:
+#
+# companies:
+#   - canonical_name: Empresa Exemplo
+#     reason: former_employer
+#     aliases:
+#       - Empresa Exemplo Ltda
+#       - Grupo Empresa Exemplo
+
+companies: []

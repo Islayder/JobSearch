@@ -1,0 +1,32 @@
+course: Engenharia de Software
+institution: PUC Minas
+location:
+  city: Belo Horizonte
+  state: MG
+  country: Brasil
+preferences:
+  remote_first: true
+  accepted_work_models:
+    - REMOTE
+    - HYBRID
+    - ONSITE
+  accepted_employment_types:
+    - INTERNSHIP
+    - TRAINEE
+    - JUNIOR
+    - SCHOLARSHIP
+interest_areas:
+  - análise de dados
+  - BI
+  - analytics
+  - engenharia de dados
+  - ciência de dados
+  - crédito
+  - riscos
+  - planejamento
+  - CRM
+  - marketing analytics
+  - operações orientadas a dados
+  - automação
+  - tecnologia
+  - software

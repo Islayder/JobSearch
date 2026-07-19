@@ -1,0 +1,6 @@
+blocked_companies:
+  - name: Companhia Fictícia Bloqueada
+    aliases:
+      - Cia Fictícia Bloqueada
+      - Grupo Bloqueado de Exemplo
+    reason: Empresa fictícia bloqueada para validar a regra.

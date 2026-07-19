@@ -1,0 +1,31 @@
+recommended_min_score: 70
+employment_type:
+  INTERNSHIP: 40
+  TRAINEE: 25
+  JUNIOR: 15
+  SCHOLARSHIP: 10
+  OTHER: 0
+  UNKNOWN: 0
+work_model:
+  remote_brazil: 30
+  hybrid_belo_horizonte: 20
+  onsite_belo_horizonte: 10
+additional:
+  salary_disclosed: 5
+  benefit_keyword_max: 5
+  benefit_keyword_points: 1
+  freshness_days: 7
+  freshness: 5
+  hours_disclosed: 2
+benefit_keywords:
+  - benefício
+  - benefícios
+  - vale
+  - alimentação
+  - refeição
+  - transporte
+  - saúde
+  - odontológico
+  - seguro
+  - gympass
+  - auxílio

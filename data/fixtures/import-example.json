@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "items": [
+    {
+      "source_name": "Importação local",
+      "source_type": "manual",
+      "external_id": "json-001",
+      "url": "https://jobs.example.test/json/estagio-dados",
+      "title": "Estágio em Dados",
+      "company": "Empresa Exemplo Dados LTDA",
+      "location": "Remoto - Brasil",
+      "description": "Estágio remoto para residentes no Brasil com SQL, BI e automação.",
+      "published_at": "2026-07-18T10:00:00Z",
+      "employment_type": "estágio",
+      "work_model": "remoto",
+      "country": "Brasil",
+      "remote_country_scope": "Brasil",
+      "hours_per_day": 6,
+      "salary_min": 1500,
+      "salary_period": "monthly",
+      "currency": "BRL",
+      "benefits": ["vale refeição", "auxílio internet"],
+      "application_url": "https://jobs.example.test/json/estagio-dados/apply",
+      "metadata": {"source_note": "exemplo versionado"}
+    },
+    {
+      "source_name": "Importação local",
+      "source_type": "manual",
+      "external_id": "json-002",
+      "title": "Trainee em Analytics",
+      "company": "Companhia Exemplo Analytics",
+      "location": "Belo Horizonte, MG",
+      "description": "Programa trainee híbrido em Belo Horizonte para analytics e BI.",
+      "published_at": "2026-07-17T10:00:00Z",
+      "employment_type": "programa trainee",
+      "work_model": "híbrido",
+      "country": "Brasil",
+      "state": "MG",
+      "city": "Belo Horizonte",
+      "hours_per_day": 8,
+      "benefits": "vale alimentação|plano de saúde"
+    },
+    {
+      "source_name": "Importação local",
+      "source_type": "manual",
+      "external_id": "json-003",
+      "title": "Pessoa Desenvolvedora Júnior",
+      "company": "Núcleo Exemplo Software",
+      "location": "Belo Horizonte, MG",
+      "description": "Vaga júnior presencial em Belo Horizonte para software.",
+      "published_at": "2026-07-16T10:00:00Z",
+      "employment_type": "jr",
+      "work_model": "presencial",
+      "country": "Brasil",
+      "state": "MG",
+      "city": "Belo Horizonte"
+    }
+  ]
+}
