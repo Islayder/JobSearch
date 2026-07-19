@@ -574,7 +574,7 @@ def _get_or_create_job(
         currency=analysis.posting.currency,
         application_url=analysis.posting.application_url or analysis.posting.url,
         published_at=analysis.posting.published_at,
-        expires_at=None,
+        expires_at=analysis.posting.expires_at,
         status=JobStatus.NEW,
         course_requirement=None,
         has_uninterpreted_course_requirement=False,

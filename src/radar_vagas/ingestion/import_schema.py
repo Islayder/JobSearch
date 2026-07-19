@@ -22,6 +22,7 @@ class ImportedPosting(BaseModel):
     location: str | None = None
     description: str | None = None
     published_at: datetime | None = None
+    expires_at: datetime | None = None
     employment_type: EmploymentType = EmploymentType.UNKNOWN
     work_model: WorkModel = WorkModel.UNKNOWN
     country: str | None = None
@@ -51,6 +52,7 @@ class ImportedPosting(BaseModel):
         "source_type",
         "location",
         "description",
+        "expires_at",
         "country",
         "state",
         "city",

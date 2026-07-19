@@ -79,6 +79,7 @@ class PostingStatus(ReadableEnum):
     LINKED = "LINKED"
     PROBABLE_DUPLICATE = "PROBABLE_DUPLICATE"
     SKIPPED_DUPLICATE = "SKIPPED_DUPLICATE"
+    CLOSED = "CLOSED"
 
 
 class DuplicateKind(ReadableEnum):

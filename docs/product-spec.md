@@ -1,64 +1,73 @@
-# Especificação do Produto
+# Especificacao do Produto
 
 ## Objetivo
 
-Radar de Vagas organiza oportunidades profissionais locais para um único
-usuário, começando por arquivos JSON de teste. A aplicação separa publicações
-coletadas de vagas canônicas, evita duplicatas exatas, avalia compatibilidade e
-gera um ranking explicável.
+Radar de Vagas organiza oportunidades profissionais locais para um unico
+usuario. A aplicacao separa publicacoes coletadas de vagas canonicas, evita
+duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 
-## Usuário
+## Entradas
+
+- fixtures e arquivos locais JSON/CSV;
+- paginas publicas com JSON-LD `JobPosting`;
+- boards publicos Greenhouse;
+- boards publicos Lever.
+
+Nao ha busca global, crawling recursivo, Gmail, IA, geracao de curriculo,
+preenchimento de formularios ou candidatura automatica.
+
+## Usuario
 
 O perfil inicial considera uma pessoa cursando Engenharia de Software na PUC
 Minas, baseada em Belo Horizonte, MG, Brasil, com prioridade para oportunidades
-remotas no Brasil, híbridas em Belo Horizonte e presenciais em Belo Horizonte.
+remotas no Brasil, hibridas em Belo Horizonte e presenciais em Belo Horizonte.
 
 ## Tipos de Oportunidade
 
-- Estágio
+- Estagio
 - Trainee
-- Júnior
-- Bolsa de inovação
-- Outros ou desconhecidos para revisão manual
+- Junior
+- Bolsa de inovacao
+- Outros ou desconhecidos para revisao manual
 
-## Prioridade Geográfica
+## Prioridade Geografica
 
-1. Remoto explicitamente disponível para residentes no Brasil.
-2. Híbrido exclusivamente em Belo Horizonte.
+1. Remoto explicitamente disponivel para residentes no Brasil.
+2. Hibrido exclusivamente em Belo Horizonte.
 3. Presencial exclusivamente em Belo Horizonte.
 
-Cidades da região metropolitana, como Contagem, Betim, Nova Lima, Ribeirão das
-Neves e Sabará, não são tratadas como Belo Horizonte.
+Cidades da regiao metropolitana, como Contagem, Betim, Nova Lima, Ribeirao das
+Neves e Sabara, nao sao tratadas como Belo Horizonte.
 
 ## Regras de Elegibilidade
 
-Estágio é aceito quando remoto no Brasil, híbrido em Belo Horizonte ou
-presencial em Belo Horizonte. Remoto sem país claro fica em revisão manual.
+Estagio e aceito quando remoto no Brasil, hibrido em Belo Horizonte ou
+presencial em Belo Horizonte. Remoto sem pais claro fica em revisao manual.
 
-Trainee é aceito quando remoto no Brasil, híbrido em Belo Horizonte ou
-presencial em Belo Horizonte com até 6 horas por dia. Trainee presencial em Belo
-Horizonte sem jornada fica em revisão manual; acima de 6 horas é incompatível.
+Trainee e aceito quando remoto no Brasil, hibrido em Belo Horizonte ou
+presencial em Belo Horizonte com ate 6 horas por dia. Trainee presencial em Belo
+Horizonte sem jornada fica em revisao manual; acima de 6 horas e incompativel.
 
-Júnior é aceito somente quando remoto no Brasil ou híbrido em Belo Horizonte.
-Qualquer vaga júnior presencial é incompatível, inclusive em Belo Horizonte.
+Junior e aceito somente quando remoto no Brasil ou hibrido em Belo Horizonte.
+Qualquer vaga junior presencial e incompativel, inclusive em Belo Horizonte.
 
-Bolsa de inovação fica em revisão manual. Outros vínculos e vínculos
-desconhecidos também ficam em revisão manual, salvo quando uma regra obrigatória
-determina rejeição.
+Bolsa de inovacao fica em revisao manual. Outros vinculos e vinculos
+desconhecidos tambem ficam em revisao manual, salvo quando uma regra obrigatoria
+determina rejeicao.
 
-## Histórico e Empresas Bloqueadas
+## Historico e Empresas Bloqueadas
 
-Empresas bloqueadas sempre tornam a vaga incompatível, considerando nome
-canônico e aliases normalizados. Vagas já descartadas, arquivadas ou com
-candidatura registrada não voltam ao ranking; elas permanecem rastreáveis.
+Empresas bloqueadas sempre tornam a vaga incompativel, considerando nome
+canonico e aliases normalizados. Vagas ja descartadas, arquivadas ou com
+candidatura registrada nao voltam ao ranking; elas permanecem rastreaveis.
 
-## Remuneração
+## Remuneracao
 
-Não há salário, bolsa ou remuneração mínima eliminatória. Salário ausente não
-elimina uma vaga e também não gera pontos no ranking.
+Nao ha salario, bolsa ou remuneracao minima eliminatoria. Salario ausente nao
+elimina uma vaga e tambem nao gera pontos no ranking.
 
 ## Candidatura
 
-A preparação de candidatura é humana nesta versão. A aplicação registra a
-estrutura de candidatura e eventos, mas não envia candidaturas, não preenche
-formulários e não altera currículos.
+A preparacao de candidatura e humana nesta versao. A aplicacao registra a
+estrutura de candidatura e eventos, mas nao envia candidaturas, nao preenche
+formularios e nao altera curriculos.

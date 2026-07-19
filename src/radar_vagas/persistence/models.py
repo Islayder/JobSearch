@@ -117,17 +117,33 @@ class CompanyAlias(Base):
 
 class CompanyBoard(Base):
     __tablename__ = "company_boards"
+    __table_args__ = (
+        Index("ix_company_boards_key", "key", unique=True),
+        Index("ix_company_boards_collector_type", "collector_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
+    key: Mapped[str | None] = mapped_column(String(120))
+    collector_type: Mapped[str | None] = mapped_column(String(80))
     external_identifier: Mapped[str | None] = mapped_column(String(255))
     board_url: Mapped[str | None] = mapped_column(String(1000))
+    configuration_json: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_etag: Mapped[str | None] = mapped_column(String(1000))
+    last_modified: Mapped[str | None] = mapped_column(String(1000))
+    last_complete_snapshot_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_run_id: Mapped[int | None] = mapped_column(ForeignKey("source_runs.id"), index=True)
+    disabled_reason: Mapped[str | None] = mapped_column(Text)
 
     company: Mapped[Company] = relationship(back_populates="boards")
     source: Mapped[Source] = relationship(back_populates="boards")
+    last_run: Mapped[SourceRun | None] = relationship(foreign_keys=[last_run_id])
 
 
 class Posting(Base):
@@ -137,6 +153,7 @@ class Posting(Base):
         UniqueConstraint("source_id", "normalized_url", name="uq_postings_source_normalized_url"),
         UniqueConstraint("content_hash", name="uq_postings_content_hash"),
         Index("ix_postings_status", "status"),
+        Index("ix_postings_active_missing", "is_active", "missing_count"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -156,12 +173,37 @@ class Posting(Base):
     status: Mapped[PostingStatus] = mapped_column(
         enum_type(PostingStatus), default=PostingStatus.NEW, nullable=False
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    missing_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    closed_reason: Mapped[str | None] = mapped_column(Text)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)
 
     source: Mapped[Source] = relationship(back_populates="postings")
     source_run: Mapped[SourceRun | None] = relationship(back_populates="postings")
     job: Mapped["Job | None"] = relationship(back_populates="postings")
     import_audits: Mapped[list["ImportItemAudit"]] = relationship(back_populates="posting")
+    revisions: Mapped[list["PostingRevision"]] = relationship(
+        back_populates="posting", cascade="all, delete-orphan"
+    )
+
+
+class PostingRevision(Base):
+    __tablename__ = "posting_revisions"
+    __table_args__ = (
+        Index("ix_posting_revisions_posting_id", "posting_id"),
+        Index("ix_posting_revisions_source_run_id", "source_run_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    posting_id: Mapped[int] = mapped_column(ForeignKey("postings.id"), nullable=False)
+    previous_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    new_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_fields_json: Mapped[str] = mapped_column(Text, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    source_run_id: Mapped[int | None] = mapped_column(ForeignKey("source_runs.id"))
+
+    posting: Mapped[Posting] = relationship(back_populates="revisions")
+    source_run: Mapped[SourceRun | None] = relationship()
 
 
 class Job(Base):

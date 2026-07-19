@@ -1,0 +1,15 @@
+{
+  "jobs": [
+    {
+      "id": 1001,
+      "title": "Estagio em Dados e BI",
+      "absolute_url": "https://boards.greenhouse.io/empresa/jobs/1001",
+      "location": {"name": "Remote - Brazil"},
+      "content": "<p>Trabalhar com dados, BI e Python.</p>",
+      "departments": [{"name": "Data"}],
+      "offices": [{"name": "Brasil"}],
+      "metadata": [{"name": "Employment Type", "value": "Internship"}],
+      "updated_at": "2026-07-02T10:00:00Z"
+    }
+  ]
+}

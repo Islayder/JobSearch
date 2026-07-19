@@ -1,41 +1,71 @@
-# Estratégia de Fontes
+# Estrategia de Fontes
 
 ## Fonte de Descoberta e Fonte Original
 
-Uma fonte de descoberta indica onde a vaga foi encontrada, como LinkedIn,
-Indeed ou alerta de e-mail. A fonte original pode ser o ATS ou página de carreira
-onde a candidatura realmente acontece, como Gupy, Greenhouse, Lever ou Ashby.
+Uma fonte de descoberta indica onde a vaga foi encontrada. A fonte original pode
+ser o ATS ou pagina de carreira onde a candidatura realmente acontece, como
+Greenhouse ou Lever.
 
-`Posting` preserva a publicação encontrada. `Job` guarda a oportunidade
-canônica quando a associação é segura.
+`Posting` preserva a publicacao encontrada. `Job` guarda a oportunidade canonica
+quando a associacao e segura.
 
-## Resolução Canônica
+## Fontes Implementadas
 
-A normalização usa nome de empresa, título, cidade, modalidade, URL e hash de
-conteúdo. Duplicatas exatas de publicação são ignoradas. Duplicatas prováveis
-entre fontes não são unidas automaticamente e ficam disponíveis para revisão
+- `jobposting`: uma pagina publica com JSON-LD `JobPosting`.
+- `greenhouse`: endpoint publico de board Greenhouse.
+- `lever`: Postings API publica do Lever.
+
+Nao ha LinkedIn, Indeed, Glassdoor, Gupy, Gmail, Playwright, login, cookies,
+CAPTCHA, proxy, POST de candidatura ou envio de formulario.
+
+## Resolucao Canonica
+
+A normalizacao usa nome de empresa, titulo, cidade, modalidade, URL e hash de
+conteudo. Duplicatas exatas de publicacao sao ignoradas. Duplicatas provaveis
+entre fontes nao sao unidas automaticamente e ficam disponiveis para revisao
 futura.
 
 ## Coleta Incremental
 
-Fontes futuras devem registrar `SourceRun` com início, fim, status e contadores.
-Coletores devem ser incrementais, respeitar termos das plataformas e evitar
-requisições agressivas.
+Cada coleta persistida registra `SourceRun`.
 
-## Alertas de E-mail
+Quando uma publicacao conhecida aparece igual:
 
-E-mails serão tratados futuramente como fonte de descoberta e como atualização
-de candidatura. Esta versão só cria a estrutura de persistência.
+- nao cria duplicata;
+- atualiza `last_seen_at` e `source_run_id`;
+- zera ausencias;
+- nao recalcula ranking sem necessidade.
 
-## APIs, ATS e Importação Manual
+Quando uma publicacao conhecida muda:
 
-APIs oficiais e integrações de ATS devem ser preferidas quando existirem. A
-entrada funcional desta etapa é local: fixture de teste e importação genérica
-por JSON/CSV. Cada importação de arquivo registra auditoria de origem, incluindo
-hash, formato, linha ou índice original e versão do schema.
+- cria `PostingRevision`;
+- atualiza os dados brutos;
+- atualiza a vaga canonica quando ela nao esta protegida por candidatura ou
+  descarte humano;
+- reexecuta elegibilidade e ranking quando permitido.
+
+Quando um item some de snapshot completo bem-sucedido:
+
+- incrementa `missing_count`;
+- nao fecha na primeira ausencia;
+- fecha somente apos o limite configurado em `network.yaml`;
+- nao incrementa ausencias em falha, timeout, execucao parcial ou HTTP 304.
+
+Quando um item fechado reaparece:
+
+- reabre a publicacao;
+- zera ausencias;
+- preserva historico e candidatura existente.
+
+## Cache HTTP
+
+Boards persistidos armazenam `ETag` e `Last-Modified` quando o servidor envia
+esses headers. Coletas seguintes enviam `If-None-Match` e `If-Modified-Since`.
+Resposta `304 Not Modified` e registrada como sucesso, sem reprocessamento e sem
+fechamento de publicacoes.
 
 ## Ganho Incremental por Fonte
 
-Cada fonte deve medir itens encontrados, criados, ignorados e duplicados para
-avaliar se aumenta o conjunto de vagas úteis ou apenas repete oportunidades já
-conhecidas.
+Cada fonte mede itens encontrados, criados, conhecidos, alterados, duplicados e
+fechados para avaliar se aumenta o conjunto de vagas uteis ou apenas repete
+oportunidades ja conhecidas.

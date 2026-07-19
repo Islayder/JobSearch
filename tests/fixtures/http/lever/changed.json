@@ -1,0 +1,17 @@
+[
+  {
+    "id": "lever-1",
+    "text": "Estagio em Engenharia de Dados e Analytics",
+    "categories": {
+      "team": "Data",
+      "department": "Engineering",
+      "location": "Remote - Brazil",
+      "commitment": "Internship"
+    },
+    "descriptionPlain": "Construir pipelines e dashboards.",
+    "hostedUrl": "https://jobs.lever.co/empresa/lever-1",
+    "applyUrl": "https://jobs.lever.co/empresa/lever-1/apply",
+    "createdAt": 1782907200000,
+    "workplaceType": "remote"
+  }
+]

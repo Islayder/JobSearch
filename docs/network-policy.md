@@ -1,0 +1,82 @@
+# Politica de Rede
+
+## Metodos Permitidos
+
+Somente GET e HEAD sao permitidos no Marco 3. POST, PUT, PATCH e DELETE nao
+fazem parte da infraestrutura de coleta.
+
+## Cliente Central
+
+Todo coletor deve usar `radar_vagas.http.client.HttpClient`. O cliente aplica:
+
+- user-agent identificavel;
+- timeouts configuraveis;
+- redirects limitados;
+- validacao de cada destino de redirect;
+- limite de resposta;
+- validacao de tipo de conteudo;
+- retry conservador para GET idempotente;
+- headers de cache.
+
+## SSRF
+
+`import-url` recebe URL arbitraria e passa por validacao antes da request.
+
+Sao aceitos somente `http` e `https`. Sao rejeitados:
+
+- `file://`, `ftp://`, `data:` e `javascript:`;
+- URL sem host;
+- credenciais embutidas;
+- localhost;
+- hosts `.local`;
+- IPs loopback, privados, link-local, multicast, reservados ou nao globais;
+- portas fora da politica, por padrao somente 80 e 443.
+
+O DNS e resolvido antes da request e todos os IPs retornados sao validados.
+Redirects passam pela mesma politica.
+
+## Timeouts e Retry
+
+Padroes em `config/network.yaml`:
+
+- connect: 10 segundos;
+- read: 30 segundos;
+- write: 10 segundos;
+- pool: 10 segundos;
+- max redirects: 5;
+- max response bytes: 5 MB;
+- max retries: 2;
+- backoff: 0.5 segundo.
+
+Retry automatico ocorre somente para GET em timeout, erro de conexao, 429, 502,
+503 e 504. `Retry-After` e respeitado quando valido. Testes injetam espera falsa
+e nao aguardam delays reais.
+
+## Tipos de Conteudo
+
+Permitidos:
+
+- `application/json`;
+- tipos `+json`;
+- `application/ld+json`;
+- `text/html`;
+- `application/xhtml+xml`.
+
+Tipos inesperados geram erro controlado e nao sao persistidos.
+
+## Cache
+
+Quando um board persistido recebe `ETag` ou `Last-Modified`, a proxima coleta
+envia `If-None-Match` e `If-Modified-Since`. HTTP 304 e sucesso sem
+reprocessamento, sem incremento de ausencia e sem fechamento.
+
+## Baixa Concorrencia
+
+`network.yaml` define `max_parallel_requests` e intervalo minimo por board. A CLI
+executa de forma conservadora e nao tenta contornar bloqueios.
+
+## Proibicoes
+
+Nao implementar busca global, crawling recursivo, login, cookies de sessao,
+CAPTCHA, fingerprint de navegador, proxies, rotacao de identidade, Playwright,
+envio de formulario ou candidatura.

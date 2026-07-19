@@ -1,0 +1,32 @@
+[
+  {
+    "id": "lever-1",
+    "text": "Estagio em Engenharia de Dados",
+    "categories": {
+      "team": "Data",
+      "department": "Engineering",
+      "location": "Remote - Brazil",
+      "commitment": "Internship"
+    },
+    "descriptionPlain": "Construir pipelines de dados.",
+    "lists": [{"text": "Requisitos", "content": "<ul><li>SQL</li><li>Python</li></ul>"}],
+    "hostedUrl": "https://jobs.lever.co/empresa/lever-1",
+    "applyUrl": "https://jobs.lever.co/empresa/lever-1/apply",
+    "createdAt": 1782907200000,
+    "workplaceType": "remote"
+  },
+  {
+    "id": "lever-2",
+    "text": "Junior Software Engineer",
+    "categories": {
+      "team": "Engineering",
+      "department": "Engineering",
+      "location": "Belo Horizonte, MG",
+      "commitment": "Full-time"
+    },
+    "description": "<p>Desenvolvimento web.</p>",
+    "hostedUrl": "https://jobs.lever.co/empresa/lever-2",
+    "createdAt": 1782907200000,
+    "workplaceType": "onsite"
+  }
+]

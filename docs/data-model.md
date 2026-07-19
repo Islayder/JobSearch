@@ -1,67 +1,96 @@
 # Modelo de Dados
 
-## Visão Geral
+## Visao Geral
 
-`Posting` representa uma publicação encontrada em uma fonte. `Job` representa a
-oportunidade canônica. Uma vaga real pode aparecer em várias publicações, mas a
-união automática só acontece quando for exata e segura.
+`Posting` representa uma publicacao encontrada em uma fonte. `Job` representa a
+oportunidade canonica. Uma vaga real pode aparecer em varias publicacoes, mas a
+uniao automatica so acontece quando for exata e segura.
 
 ```mermaid
 erDiagram
     SOURCE ||--o{ SOURCE_RUN : runs
     SOURCE ||--o{ POSTING : publishes
     SOURCE ||--o{ COMPANY_BOARD : lists
-    SOURCE_RUN ||--o{ POSTING : found
+    SOURCE_RUN ||--o{ POSTING : last_seen_in
+    SOURCE_RUN ||--o{ POSTING_REVISION : observed
     COMPANY ||--o{ COMPANY_ALIAS : has
     COMPANY ||--o{ COMPANY_BOARD : owns
     COMPANY ||--o{ JOB : offers
     JOB ||--o{ POSTING : groups
+    POSTING ||--o{ POSTING_REVISION : changed_by
     JOB ||--o| DECISION : evaluated_by
     JOB ||--o{ APPLICATION : applied_to
     APPLICATION ||--o{ APPLICATION_EVENT : has
     FILE_IMPORT_BATCH ||--o{ IMPORT_ITEM_AUDIT : audits
     POSTING ||--o{ IMPORT_ITEM_AUDIT : traced_by
-    RESUME ||--o{ RESUME_VERSION : versions
-    JOB ||--o{ RESUME_VERSION : tailored_for
-    COMPANY ||--o{ EMAIL_MESSAGE : mentioned_by
-    JOB ||--o{ EMAIL_MESSAGE : referenced_by
-    APPLICATION ||--o{ EMAIL_MESSAGE : updates
 ```
 
 ## Entidades
 
-`Source` guarda portais, ATS, alertas e importações manuais. `SourceRun`
-representa uma execução de ingestão com contadores de itens.
+`Source` guarda portais, ATS, alertas e importacoes manuais. `SourceRun`
+representa uma execucao de ingestao ou coleta com inicio, fim, status e
+contadores de itens.
 
-`Company` guarda a organização canônica. `CompanyAlias` guarda variações
-normalizadas do nome. `CompanyBoard` permite mapear páginas de carreira.
+`Company` guarda a organizacao canonica. `CompanyAlias` guarda variacoes
+normalizadas do nome.
 
-`Posting` guarda os dados brutos da publicação, URL normalizada, hash de
-conteúdo, fonte e associação opcional a `Job`.
+`CompanyBoard` mapeia boards publicos configurados. Campos principais:
 
-`Job` guarda a vaga canônica com tipo, modalidade, localidade, remuneração,
-status e campos mínimos para futura compatibilidade acadêmica.
+- `key`
+- `collector_type`
+- `external_identifier`
+- `board_url`
+- `configuration_json`
+- `is_active`
+- `last_checked_at`
+- `last_success_at`
+- `last_failed_at`
+- `consecutive_failures`
+- `last_etag`
+- `last_modified`
+- `last_complete_snapshot_at`
+- `last_run_id`
+- `disabled_reason`
 
-`Decision` guarda a última avaliação de elegibilidade, motivo, nota e detalhamento.
+`Posting` guarda dados brutos da publicacao, URL normalizada, hash de conteudo,
+fonte e associacao opcional a `Job`. Para coleta incremental, tambem guarda:
 
-`Application` e `ApplicationEvent` registram candidatura e evolução do processo,
-sem envio automático nesta etapa.
+- `is_active`
+- `missing_count`
+- `closed_reason`
 
-`Resume` e `ResumeVersion` guardam estrutura para futuras versões de currículo,
-sem geração de arquivo.
+`PostingRevision` registra mudancas observadas em uma publicacao conhecida:
 
-`EmailMessage` guarda estrutura para futura integração de e-mails, sem conexão
+- hash anterior
+- novo hash
+- campos alterados em JSON
+- data de observacao
+- `SourceRun` em que a mudanca foi vista
+
+O HTML integral de respostas externas nao e duplicado em revisoes.
+
+`Job` guarda a vaga canonica com tipo, modalidade, localidade, remuneracao,
+status e campos minimos para futura compatibilidade academica.
+
+`Decision` guarda a ultima avaliacao de elegibilidade, motivo, nota e
+detalhamento.
+
+`Application` e `ApplicationEvent` registram candidatura e evolucao do processo,
+sem envio automatico nesta etapa.
+
+`Resume` e `ResumeVersion` guardam estrutura para futuras versoes de curriculo,
+sem geracao de arquivo.
+
+`EmailMessage` guarda estrutura para futura integracao de e-mails, sem conexao
 com Gmail nesta etapa.
 
-`FileImportBatch` registra origem de importações locais com caminho do arquivo,
-hash, formato, versão de schema, modo de importação, horários e resumo.
+`FileImportBatch` e `ImportItemAudit` registram auditoria de importacoes locais.
 
-`ImportItemAudit` registra linha ou índice original, payload bruto, payload
-normalizado, status, duplicidade e associação opcional a `Posting` e `Job`.
-O arquivo inteiro não é armazenado no banco.
+## Chaves e Indices
 
-## Chaves e Índices
+Publicacoes evitam duplicidade por fonte e identificador externo, fonte e URL
+normalizada, e hash de conteudo. Consultas frequentes usam indices por status,
+atividade, ausencias, tipo, modalidade, cidade, empresa e nota.
 
-Publicações evitam duplicidade por fonte e identificador externo, fonte e URL
-normalizada, e hash de conteúdo. Consultas frequentes usam índices por status,
-tipo, modalidade, cidade, empresa e nota.
+`CompanyBoard.key` e unico quando presente. Boards antigos sem key podem ser
+migrados e atualizados posteriormente.

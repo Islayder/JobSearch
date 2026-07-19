@@ -22,6 +22,7 @@ Campos aceitos:
 - `location`
 - `description`
 - `published_at`, ISO 8601
+- `expires_at`, ISO 8601
 - `employment_type`
 - `work_model`
 - `country`

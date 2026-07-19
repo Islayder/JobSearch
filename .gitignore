@@ -28,3 +28,4 @@ data/imports/*
 *currículo*
 *resume*
 data/personal/
+config/company_boards.local.yaml

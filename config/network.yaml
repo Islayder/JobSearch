@@ -1,0 +1,19 @@
+http:
+  user_agent: RadarVagas/0.3 - personal job search tool
+  connect_timeout_seconds: 10
+  read_timeout_seconds: 30
+  write_timeout_seconds: 10
+  pool_timeout_seconds: 10
+  max_redirects: 5
+  max_response_bytes: 5242880
+  max_retries: 2
+  retry_backoff_seconds: 0.5
+  allowed_ports:
+    - 80
+    - 443
+
+collection:
+  default_max_items: 500
+  max_parallel_requests: 3
+  close_after_missing_successful_runs: 2
+  minimum_interval_between_board_requests_seconds: 1

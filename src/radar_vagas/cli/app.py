@@ -4,6 +4,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from importlib import import_module
 from pathlib import Path
 from typing import Annotated, NoReturn
@@ -12,16 +13,31 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from sqlalchemy import func, select, text
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from radar_vagas.collection.contracts import CollectionContext
+from radar_vagas.collection.orchestrator import (
+    build_collection_context,
+    load_board_cache_headers,
+    record_failed_collection,
+    run_collection_persistence,
+)
+from radar_vagas.collection.result import (
+    CollectionExecutionReport,
+    write_collection_report,
+)
+from radar_vagas.collectors.registry import get_collector, list_collectors
 from radar_vagas.config.loaders import (
     load_blocked_companies,
+    load_company_boards,
     load_eligibility_rules,
+    load_network_config,
     load_profile,
     load_ranking_weights,
 )
+from radar_vagas.config.schemas import BoardConfig
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
     EligibilityStatus,
@@ -35,6 +51,7 @@ from radar_vagas.eligibility.workflow import (
     evaluate_all_jobs,
     evaluate_job_by_id,
 )
+from radar_vagas.http.client import HttpClient
 from radar_vagas.ingestion.file_import_service import (
     ImportExecutionResult,
     ImportFileReport,
@@ -47,6 +64,7 @@ from radar_vagas.persistence.database import session_scope
 from radar_vagas.persistence.migrations import database_display_path, run_migrations
 from radar_vagas.persistence.models import (
     Company,
+    CompanyBoard,
     Decision,
     ImportItemAudit,
     Job,
@@ -65,6 +83,12 @@ app = typer.Typer(
 @dataclass(frozen=True)
 class CliState:
     debug: bool
+
+
+@dataclass(frozen=True)
+class ResolvedBoard:
+    config: BoardConfig
+    persist: bool
 
 
 @app.callback()
@@ -184,6 +208,270 @@ def validate_file_command(
         if report is not None:
             write_import_report(validation_report, report)
         _print_import_report(validation_report, title="Validação concluída")
+
+    _run(ctx, action)
+
+
+@app.command("import-url")
+def import_url_command(
+    ctx: typer.Context,
+    url: Annotated[str, typer.Argument(help="Pagina publica com JSON-LD JobPosting.")],
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Coleta e valida sem alterar o banco."),
+    ] = False,
+    include_all: Annotated[
+        bool,
+        typer.Option("--all", help="Processa todos os objetos JobPosting da pagina."),
+    ] = False,
+    selected_index: Annotated[
+        int | None,
+        typer.Option("--select", help="Processa apenas o objeto JobPosting de indice informado."),
+    ] = None,
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", help="Caminho para relatorio JSON de coleta."),
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Exibe traceback completo para este comando."),
+    ] = False,
+) -> None:
+    """Importa uma pagina publica com dados estruturados JobPosting."""
+
+    def action() -> None:
+        _apply_command_debug(ctx, debug)
+        settings = _settings(ctx)
+        network = load_network_config(settings.config_dir)
+        client = HttpClient(network.http)
+        context = CollectionContext(
+            collector="jobposting",
+            source_name=f"JobPosting: {url}",
+            source_type="jobposting",
+            url=url,
+            dry_run=dry_run,
+            http_client=client,
+            collection_config=network.collection,
+            include_all=include_all,
+            selected_index=selected_index,
+        )
+        try:
+            result = get_collector("jobposting").collect(context)
+        except Exception as exc:
+            with session_scope(settings) as session:
+                record_failed_collection(session, context, exc, settings=settings)
+            raise
+        finally:
+            client.close()
+        with session_scope(settings) as session:
+            execution = run_collection_persistence(session, settings, context, result)
+        _write_and_print_collection_report(execution, report)
+
+    _run(ctx, action)
+
+
+@app.command("collectors")
+def collectors_command() -> None:
+    """Lista coletores publicos registrados."""
+
+    table = Table(title="Coletores")
+    table.add_column("Slug")
+    table.add_column("Nome")
+    table.add_column("Tipo")
+    table.add_column("Snapshot")
+    table.add_column("Autenticacao")
+    table.add_column("Estado")
+    for metadata in list_collectors():
+        table.add_row(
+            metadata.slug,
+            metadata.name,
+            metadata.collector_type,
+            "sim" if metadata.supports_complete_snapshot else "nao",
+            metadata.authentication,
+            metadata.status,
+        )
+    console.print(table)
+
+
+@app.command("collect-board")
+def collect_board_command(
+    ctx: typer.Context,
+    target: Annotated[str, typer.Argument(help="Key configurada ou slug do coletor.")],
+    board_token: Annotated[
+        str | None,
+        typer.Option("--board-token", help="Token publico do board Greenhouse ou Lever."),
+    ] = None,
+    company: Annotated[
+        str | None,
+        typer.Option("--company", help="Nome canonico da empresa."),
+    ] = None,
+    max_items: Annotated[
+        int | None,
+        typer.Option("--max-items", help="Limite de itens nesta coleta."),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Data minima ISO 8601, quando o coletor suportar."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Coleta e valida sem alterar o banco."),
+    ] = False,
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", help="Caminho para relatorio JSON de coleta."),
+    ] = None,
+    save_board: Annotated[
+        str | None,
+        typer.Option("--save-board", help="Persiste o board direto com a key informada."),
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Exibe traceback completo para este comando."),
+    ] = False,
+) -> None:
+    """Coleta um board configurado ou um board publico por token."""
+
+    def action() -> None:
+        _apply_command_debug(ctx, debug)
+        settings = _settings(ctx)
+        board = _resolve_board_config(
+            settings,
+            target=target,
+            board_token=board_token,
+            company=company,
+            save_board=save_board,
+        )
+        execution = _collect_single_board(
+            settings,
+            board,
+            dry_run=dry_run,
+            max_items=max_items,
+            since=since,
+        )
+        _write_and_print_collection_report(execution, report)
+
+    _run(ctx, action)
+
+
+@app.command("collect-all")
+def collect_all_command(
+    ctx: typer.Context,
+    collector: Annotated[
+        str | None,
+        typer.Option("--collector", help="Filtra por coletor: greenhouse, lever ou jobposting."),
+    ] = None,
+    tag: Annotated[
+        list[str] | None,
+        typer.Option("--tag", help="Filtra boards por tag. Pode ser usado mais de uma vez."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Coleta e valida sem alterar o banco."),
+    ] = False,
+    max_items_per_board: Annotated[
+        int | None,
+        typer.Option("--max-items-per-board", help="Limite por board."),
+    ] = None,
+    continue_on_error: Annotated[
+        bool,
+        typer.Option("--continue-on-error/--stop-on-error", help="Continua apos falhas."),
+    ] = True,
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", help="Caminho para relatorio JSON consolidado."),
+    ] = None,
+) -> None:
+    """Coleta todos os boards ativos configurados."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        boards = _filtered_boards(settings, collector=collector, tags=tag or [])
+        executions: list[CollectionExecutionReport] = []
+        errors: list[str] = []
+        for board in boards:
+            try:
+                executions.append(
+                    _collect_single_board(
+                        settings,
+                        ResolvedBoard(config=board, persist=True),
+                        dry_run=dry_run,
+                        max_items=max_items_per_board,
+                        since=None,
+                    )
+                )
+            except Exception as exc:
+                errors.append(f"{board.key}: {exc}")
+                if not continue_on_error:
+                    raise
+        _print_collect_all_result(executions, errors)
+        if report is not None:
+            _write_collect_all_report(executions, errors, report)
+        if errors:
+            raise typer.Exit(1)
+
+    _run(ctx, action)
+
+
+@app.command("boards")
+def boards_command(
+    ctx: typer.Context,
+    collector: Annotated[
+        str | None,
+        typer.Option("--collector", help="Filtra por coletor."),
+    ] = None,
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Filtra boards ativos ou inativos."),
+    ] = None,
+    tag: Annotated[
+        str | None,
+        typer.Option("--tag", help="Filtra por tag."),
+    ] = None,
+) -> None:
+    """Lista boards configurados e a saude persistida."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        boards = load_company_boards(settings.config_dir).boards
+        if collector is not None:
+            boards = [board for board in boards if board.collector == collector]
+        if enabled is not None:
+            boards = [board for board in boards if board.enabled is enabled]
+        if tag is not None:
+            boards = [board for board in boards if tag.lower() in board.tags]
+        with session_scope(settings) as session:
+            _print_boards(session, boards)
+
+    _run(ctx, action)
+
+
+@app.command("show-board")
+def show_board_command(
+    ctx: typer.Context,
+    board_key: Annotated[str, typer.Argument(help="Key do board configurado.")],
+) -> None:
+    """Mostra configuracao segura e historico recente de um board."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        board_config = _board_by_key(load_company_boards(settings.config_dir).boards, board_key)
+        if board_config is None:
+            raise RadarError(f"Board nao encontrado: {board_key}")
+        with session_scope(settings) as session:
+            _print_board_detail(session, board_config)
+
+    _run(ctx, action)
+
+
+@app.command("source-health")
+def source_health_command(ctx: typer.Context) -> None:
+    """Mostra um resumo da saude das fontes configuradas."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            _print_source_health(session)
 
     _run(ctx, action)
 
@@ -361,6 +649,215 @@ def _state(ctx: typer.Context) -> CliState:
     return CliState(debug=False)
 
 
+def _apply_command_debug(ctx: typer.Context, debug: bool) -> None:
+    if debug:
+        ctx.obj = CliState(debug=True)
+
+
+def _resolve_board_config(
+    settings: Settings,
+    *,
+    target: str,
+    board_token: str | None,
+    company: str | None,
+    save_board: str | None,
+) -> ResolvedBoard:
+    configured = _board_by_key(load_company_boards(settings.config_dir).boards, target)
+    if configured is not None:
+        return ResolvedBoard(config=configured, persist=True)
+
+    collector_slug = target.strip().lower()
+    if collector_slug not in {"greenhouse", "lever", "jobposting"}:
+        raise RadarError(f"Board ou coletor desconhecido: {target}")
+    if collector_slug in {"greenhouse", "lever"} and (not board_token or not company):
+        raise RadarError("--board-token e --company sao obrigatorios para coleta direta.")
+    if collector_slug == "jobposting":
+        raise RadarError("Use `radar import-url <url>` para paginas JobPosting individuais.")
+    key = save_board or f"{collector_slug}-{board_token}"
+    board = BoardConfig(
+        key=key,
+        company_name=company or "",
+        collector=collector_slug,
+        board_token=board_token,
+        enabled=True,
+        priority=100,
+        tags=[],
+        notes="Criado pela CLI com --save-board." if save_board else None,
+    )
+    return ResolvedBoard(config=board, persist=save_board is not None)
+
+
+def _collect_single_board(
+    settings: Settings,
+    resolved: ResolvedBoard,
+    *,
+    dry_run: bool,
+    max_items: int | None,
+    since: str | None,
+) -> CollectionExecutionReport:
+    board = resolved.config
+    network = load_network_config(settings.config_dir)
+    client = HttpClient(network.http)
+    cache_etag: str | None = None
+    cache_last_modified: str | None = None
+    if not dry_run and resolved.persist:
+        with session_scope(settings) as session:
+            cache_etag, cache_last_modified = load_board_cache_headers(session, board.key)
+    context = CollectionContext(
+        collector=board.collector,
+        source_name=build_collection_context(
+            collector=board.collector,
+            company_name=board.company_name,
+            board_key=board.key,
+            board_token=board.board_token,
+            url=board.url,
+        ).source_name,
+        source_type=board.collector,
+        company_name=board.company_name,
+        board_key=board.key,
+        board_token=board.board_token,
+        url=board.url,
+        dry_run=dry_run,
+        max_items=max_items,
+        since=_parse_optional_datetime(since),
+        http_client=client,
+        collection_config=network.collection,
+        cache_etag=cache_etag,
+        cache_last_modified=cache_last_modified,
+    )
+    try:
+        result = get_collector(board.collector).collect(context)
+    except Exception as exc:
+        with session_scope(settings) as session:
+            record_failed_collection(
+                session,
+                context,
+                exc,
+                board_config=board if resolved.persist else None,
+                settings=settings,
+            )
+        raise
+    finally:
+        client.close()
+    with session_scope(settings) as session:
+        return run_collection_persistence(
+            session,
+            settings,
+            context,
+            result,
+            board_config=board if resolved.persist else None,
+        )
+
+
+def _parse_optional_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise RadarError(f"Data invalida em --since: {value}") from exc
+
+
+def _filtered_boards(
+    settings: Settings,
+    *,
+    collector: str | None,
+    tags: list[str],
+) -> list[BoardConfig]:
+    boards = load_company_boards(settings.config_dir).enabled_boards()
+    if collector is not None:
+        boards = [board for board in boards if board.collector == collector.strip().lower()]
+    normalized_tags = {tag.strip().lower() for tag in tags if tag.strip()}
+    if normalized_tags:
+        boards = [board for board in boards if normalized_tags.issubset(set(board.tags))]
+    return sorted(boards, key=lambda board: (board.priority, board.key))
+
+
+def _board_by_key(boards: list[BoardConfig], board_key: str) -> BoardConfig | None:
+    for board in boards:
+        if board.key == board_key:
+            return board
+    return None
+
+
+def _write_and_print_collection_report(
+    execution: CollectionExecutionReport,
+    report_path: Path | None,
+) -> None:
+    if report_path is not None:
+        write_collection_report(execution, report_path)
+    _print_collection_execution(execution)
+
+
+def _print_collection_execution(execution: CollectionExecutionReport) -> None:
+    title = "Simulacao de coleta concluida" if execution.dry_run else "Coleta concluida"
+    table = Table(title=title)
+    table.add_column("Metrica")
+    table.add_column("Valor", justify="right")
+    table.add_row("Coletor", execution.collector)
+    table.add_row("Board", execution.board or "-")
+    table.add_row("Requests", str(execution.network.get("requests", 0)))
+    table.add_row("Bytes", str(execution.network.get("bytes_received", 0)))
+    labels = {
+        "found": "Encontradas",
+        "new": "Novas",
+        "unchanged": "Conhecidas inalteradas",
+        "changed": "Alteradas",
+        "exact_duplicates": "Duplicatas exatas",
+        "probable_duplicates": "Duplicatas provaveis",
+        "eligible": "Elegiveis",
+        "manual_review": "Revisao manual",
+        "ineligible": "Incompativeis",
+        "closed": "Encerradas",
+        "reopened": "Reabertas",
+    }
+    summary = execution.summary.to_dict()
+    for key, label in labels.items():
+        table.add_row(label, str(summary.get(key, 0)))
+    console.print(table)
+    for warning in execution.warnings:
+        console.print(f"[yellow]Aviso:[/yellow] {warning}")
+
+
+def _print_collect_all_result(
+    executions: list[CollectionExecutionReport],
+    errors: list[str],
+) -> None:
+    table = Table(title="Coleta de boards")
+    table.add_column("Board", no_wrap=True)
+    table.add_column("Coletor")
+    table.add_column("Encontradas", justify="right")
+    table.add_column("Novas", justify="right")
+    table.add_column("Alteradas", justify="right")
+    table.add_column("Encerradas", justify="right")
+    for execution in executions:
+        summary = execution.summary
+        table.add_row(
+            execution.board or "-",
+            execution.collector,
+            str(summary.found),
+            str(summary.new),
+            str(summary.changed),
+            str(summary.closed),
+        )
+    console.print(table)
+    for error in errors:
+        console.print(f"[red]Falha:[/red] {error}")
+
+
+def _write_collect_all_report(
+    executions: list[CollectionExecutionReport],
+    errors: list[str],
+    report_path: Path,
+) -> None:
+    payload = {
+        "boards": [execution.to_dict() for execution in executions],
+        "errors": errors,
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _run[ReturnType](ctx: typer.Context, action: Callable[[], ReturnType]) -> ReturnType:
     try:
         return action()
@@ -372,6 +869,8 @@ def _run[ReturnType](ctx: typer.Context, action: Callable[[], ReturnType]) -> Re
             "Banco indisponível ou não inicializado. Execute `radar init-db` e tente novamente.",
             exc,
         )
+    except typer.Exit:
+        raise
     except Exception as exc:
         _fail(ctx, f"Falha inesperada: {exc}", exc)
 
@@ -574,6 +1073,192 @@ def _print_stats(session: Session) -> None:
     )
 
 
+def _print_boards(session: Session, boards: list[BoardConfig]) -> None:
+    table = Table(title="Boards")
+    table.add_column("Key", no_wrap=True)
+    table.add_column("Empresa")
+    table.add_column("Coletor")
+    table.add_column("Ativo")
+    table.add_column("Ultima execucao")
+    table.add_column("Ultimo sucesso")
+    table.add_column("Falhas", justify="right")
+    table.add_column("Publicacoes ativas", justify="right")
+    table.add_column("Estado")
+    for board in boards:
+        db_board = session.scalar(select(CompanyBoard).where(CompanyBoard.key == board.key))
+        active_postings = (
+            _active_postings_for_source(session, db_board.source_id) if db_board is not None else 0
+        )
+        table.add_row(
+            board.key,
+            board.company_name,
+            board.collector,
+            "sim" if board.enabled else "nao",
+            _date_or_dash(db_board.last_checked_at if db_board else None),
+            _date_or_dash(db_board.last_success_at if db_board else None),
+            str(db_board.consecutive_failures if db_board else 0),
+            str(active_postings),
+            _board_state(board, db_board),
+        )
+    if boards:
+        console.print(table)
+    else:
+        console.print("Nenhum board encontrado para os filtros informados.")
+
+
+def _print_board_detail(session: Session, board_config: BoardConfig) -> None:
+    db_board = session.scalar(select(CompanyBoard).where(CompanyBoard.key == board_config.key))
+    details = Table.grid(padding=(0, 2))
+    details.add_column(style="bold")
+    details.add_column()
+    details.add_row("Key", board_config.key)
+    details.add_row("Empresa", board_config.company_name)
+    details.add_row("Coletor", board_config.collector)
+    details.add_row("Ativo", "sim" if board_config.enabled else "nao")
+    details.add_row("Board token", "presente" if board_config.board_token else "-")
+    details.add_row("URL", board_config.url or "-")
+    details.add_row("Tags", ", ".join(board_config.tags) or "-")
+    details.add_row("Notas", board_config.notes or "-")
+    if db_board is not None:
+        details.add_row("Ultima coleta", _date_or_dash(db_board.last_checked_at))
+        details.add_row("Ultimo sucesso", _date_or_dash(db_board.last_success_at))
+        details.add_row("Ultima falha", _date_or_dash(db_board.last_failed_at))
+        details.add_row("Falhas consecutivas", str(db_board.consecutive_failures))
+        details.add_row("Ultimo ETag", db_board.last_etag or "-")
+        details.add_row("Last-Modified", db_board.last_modified or "-")
+        details.add_row(
+            "Ultimo snapshot completo",
+            _date_or_dash(db_board.last_complete_snapshot_at),
+        )
+        details.add_row(
+            "Publicacoes ativas",
+            str(_active_postings_for_source(session, db_board.source_id)),
+        )
+        details.add_row(
+            "Ausencias pendentes",
+            str(_pending_absences_for_source(session, db_board.source_id)),
+        )
+    console.print(Panel(details, title="Board"))
+
+    if db_board is None:
+        console.print("Board ainda nao possui historico persistido.")
+        return
+
+    runs = session.scalars(
+        select(SourceRun)
+        .where(SourceRun.source_id == db_board.source_id)
+        .order_by(desc(SourceRun.started_at))
+        .limit(5)
+    ).all()
+    run_table = Table(title="Execucoes recentes")
+    run_table.add_column("ID", justify="right")
+    run_table.add_column("Status")
+    run_table.add_column("Inicio")
+    run_table.add_column("Fim")
+    run_table.add_column("Encontradas", justify="right")
+    run_table.add_column("Criadas", justify="right")
+    run_table.add_column("Ignoradas", justify="right")
+    run_table.add_column("Erro")
+    for run in runs:
+        run_table.add_row(
+            str(run.id),
+            run.status.value.lower(),
+            _date_or_dash(run.started_at),
+            _date_or_dash(run.finished_at),
+            str(run.items_found),
+            str(run.items_created),
+            str(run.items_skipped),
+            run.error_message or "-",
+        )
+    console.print(run_table)
+
+
+def _print_source_health(session: Session) -> None:
+    boards = session.scalars(select(CompanyBoard).order_by(CompanyBoard.key.asc())).all()
+    active_boards = [board for board in boards if board.is_active]
+    healthy = [board for board in active_boards if board.consecutive_failures == 0]
+    warning = [board for board in active_boards if 0 < board.consecutive_failures < 3]
+    failing = [board for board in active_boards if board.consecutive_failures >= 3]
+
+    summary = Table(title="Saude das fontes")
+    summary.add_column("Metrica")
+    summary.add_column("Valor", justify="right")
+    summary.add_row("Boards ativos", str(len(active_boards)))
+    summary.add_row("Saudaveis", str(len(healthy)))
+    summary.add_row("Com avisos", str(len(warning)))
+    summary.add_row("Falhando", str(len(failing)))
+    console.print(summary)
+
+    table = Table(title="Boards persistidos")
+    table.add_column("Key", no_wrap=True)
+    table.add_column("Coletor")
+    table.add_column("Estado")
+    table.add_column("Ultima execucao")
+    table.add_column("Itens encontrados", justify="right")
+    table.add_column("Itens novos", justify="right")
+    table.add_column("Ignorados", justify="right")
+    for board in boards:
+        last_run = session.get(SourceRun, board.last_run_id) if board.last_run_id else None
+        table.add_row(
+            board.key or "-",
+            board.collector_type or "-",
+            _health_label(board),
+            _date_or_dash(board.last_checked_at),
+            str(last_run.items_found if last_run else 0),
+            str(last_run.items_created if last_run else 0),
+            str(last_run.items_skipped if last_run else 0),
+        )
+    if boards:
+        console.print(table)
+    else:
+        console.print("Nenhum board persistido ainda.")
+
+
+def _active_postings_for_source(session: Session, source_id: int) -> int:
+    value = session.scalar(
+        select(func.count(Posting.id)).where(
+            Posting.source_id == source_id,
+            Posting.is_active.is_(True),
+        )
+    )
+    return int(value or 0)
+
+
+def _pending_absences_for_source(session: Session, source_id: int) -> int:
+    value = session.scalar(
+        select(func.count(Posting.id)).where(
+            Posting.source_id == source_id,
+            Posting.is_active.is_(True),
+            Posting.missing_count > 0,
+        )
+    )
+    return int(value or 0)
+
+
+def _board_state(board: BoardConfig, db_board: CompanyBoard | None) -> str:
+    if not board.enabled:
+        return "desativado"
+    if db_board is None or db_board.last_checked_at is None:
+        return "sem historico"
+    return _health_label(db_board)
+
+
+def _health_label(board: CompanyBoard) -> str:
+    if not board.is_active:
+        return "desativado"
+    if board.consecutive_failures >= 3:
+        return "falhando"
+    if board.consecutive_failures > 0:
+        return "aviso"
+    if board.last_success_at is not None:
+        return "saudavel"
+    return "sem historico"
+
+
+def _date_or_dash(value: datetime | None) -> str:
+    return "-" if value is None else value.isoformat()
+
+
 def _count_postings(session: Session) -> int:
     value = session.scalar(select(func.count(Posting.id)))
     return int(value or 0)
@@ -689,7 +1374,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0002_file_import_audit":
+    if version == "0003_collection_infrastructure":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 
@@ -700,6 +1385,8 @@ def _check_yaml_configs(settings: Settings) -> list[tuple[str, str, str]]:
         ("Perfil", lambda: load_profile(settings.config_dir, settings.profile_path).path),
         ("Elegibilidade", lambda: load_eligibility_rules(settings.config_dir).rules_version),
         ("Ranking", lambda: str(load_ranking_weights(settings.config_dir).recommended_min_score)),
+        ("Rede", lambda: load_network_config(settings.config_dir).http.user_agent),
+        ("Boards", lambda: str(len(load_company_boards(settings.config_dir).boards))),
         (
             "Empresas bloqueadas",
             lambda: str(len(load_blocked_companies(settings.config_dir).all_companies)),
@@ -739,7 +1426,7 @@ def _check_git_status() -> tuple[str, str, str]:
 
 def _check_dependencies() -> list[tuple[str, str, str]]:
     checks: list[tuple[str, str, str]] = []
-    modules = ["sqlalchemy", "alembic", "pydantic", "yaml", "typer", "rich"]
+    modules = ["sqlalchemy", "alembic", "pydantic", "yaml", "typer", "rich", "httpx", "bs4"]
     for module in modules:
         try:
             import_module(module)

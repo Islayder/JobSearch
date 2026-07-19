@@ -1,0 +1,29 @@
+boards:
+  - key: empresa-exemplo-greenhouse
+    company_name: Empresa Exemplo
+    collector: greenhouse
+    board_token: empresaexemplo
+    enabled: true
+    priority: 100
+    tags:
+      - technology
+      - remote
+    notes: Board ficticio para demonstrar o formato
+
+  - key: empresa-exemplo-lever
+    company_name: Empresa Exemplo
+    collector: lever
+    board_token: empresaexemplo
+    enabled: false
+    priority: 100
+    tags:
+      - technology
+
+  - key: vaga-exemplo-jobposting
+    company_name: Empresa Exemplo
+    collector: jobposting
+    url: https://example.invalid/jobs/123
+    enabled: false
+    priority: 100
+    tags:
+      - example

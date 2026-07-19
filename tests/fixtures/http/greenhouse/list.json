@@ -1,0 +1,25 @@
+{
+  "jobs": [
+    {
+      "id": 1001,
+      "title": "Estagio em Dados",
+      "absolute_url": "https://boards.greenhouse.io/empresa/jobs/1001",
+      "location": {"name": "Remote - Brazil"},
+      "content": "<p>Trabalhar com dados e Python.</p>",
+      "departments": [{"name": "Data"}],
+      "offices": [{"name": "Brasil"}],
+      "metadata": [{"name": "Employment Type", "value": "Internship"}],
+      "updated_at": "2026-07-01T10:00:00Z"
+    },
+    {
+      "id": 1002,
+      "title": "Trainee em Produto",
+      "absolute_url": "https://boards.greenhouse.io/empresa/jobs/1002",
+      "location": {"name": "Belo Horizonte, MG"},
+      "content": "<p>Programa trainee.</p>",
+      "departments": [{"name": "Product"}],
+      "offices": [{"name": "BH"}],
+      "metadata": []
+    }
+  ]
+}

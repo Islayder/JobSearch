@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class EligibilityRulesConfig(BaseModel):
@@ -128,3 +128,105 @@ class ProfileConfig(BaseModel):
     interest_areas: list[str] = Field(default_factory=list)
     compensation: CompensationPreferences = Field(default_factory=CompensationPreferences)
     growth: GrowthPreferences = Field(default_factory=GrowthPreferences)
+
+
+class HttpConfig(BaseModel):
+    user_agent: str = "RadarVagas/0.3 - personal job search tool"
+    connect_timeout_seconds: float = Field(default=10, gt=0)
+    read_timeout_seconds: float = Field(default=30, gt=0)
+    write_timeout_seconds: float = Field(default=10, gt=0)
+    pool_timeout_seconds: float = Field(default=10, gt=0)
+    max_redirects: int = Field(default=5, ge=0, le=10)
+    max_response_bytes: int = Field(default=5_242_880, ge=1024)
+    max_retries: int = Field(default=2, ge=0, le=5)
+    retry_backoff_seconds: float = Field(default=0.5, ge=0)
+    allowed_ports: list[int] = Field(default_factory=lambda: [80, 443])
+
+    @field_validator("allowed_ports")
+    @classmethod
+    def validate_allowed_ports(cls, value: list[int]) -> list[int]:
+        if not value:
+            raise ValueError("allowed_ports nao pode ficar vazio")
+        invalid = [port for port in value if port < 1 or port > 65535]
+        if invalid:
+            raise ValueError(f"portas invalidas: {invalid}")
+        return sorted(set(value))
+
+
+class CollectionConfig(BaseModel):
+    default_max_items: int = Field(default=500, ge=1, le=10_000)
+    max_parallel_requests: int = Field(default=3, ge=1, le=10)
+    close_after_missing_successful_runs: int = Field(default=2, ge=1, le=10)
+    minimum_interval_between_board_requests_seconds: float = Field(default=1, ge=0)
+
+
+class NetworkConfig(BaseModel):
+    http: HttpConfig = Field(default_factory=HttpConfig)
+    collection: CollectionConfig = Field(default_factory=CollectionConfig)
+
+
+class BoardConfig(BaseModel):
+    key: str
+    company_name: str
+    collector: str
+    board_token: str | None = None
+    url: str | None = None
+    enabled: bool = True
+    priority: int = 100
+    tags: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+    @field_validator("key", "company_name", "collector")
+    @classmethod
+    def require_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("campo obrigatorio vazio")
+        return stripped
+
+    @field_validator("collector")
+    @classmethod
+    def normalize_collector(cls, value: str) -> str:
+        collector = value.strip().lower()
+        allowed = {"jobposting", "greenhouse", "lever"}
+        if collector not in allowed:
+            raise ValueError(f"coletor desconhecido: {value}")
+        return collector
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, value: list[str]) -> list[str]:
+        tags = []
+        for tag in value:
+            normalized = tag.strip().lower()
+            if normalized:
+                tags.append(normalized)
+        return sorted(set(tags))
+
+    @model_validator(mode="after")
+    def validate_collector_fields(self) -> "BoardConfig":
+        if self.collector in {"greenhouse", "lever"} and not self.board_token:
+            raise ValueError(f"board_token e obrigatorio para {self.collector}")
+        if self.collector == "jobposting" and not self.url:
+            raise ValueError("url e obrigatoria para jobposting")
+        return self
+
+
+class CompanyBoardsConfig(BaseModel):
+    boards: list[BoardConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_keys(self) -> "CompanyBoardsConfig":
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for board in self.boards:
+            if board.key in seen:
+                duplicates.add(board.key)
+            seen.add(board.key)
+        if duplicates:
+            joined = ", ".join(sorted(duplicates))
+            raise ValueError(f"keys duplicadas em company_boards: {joined}")
+        return self
+
+    def enabled_boards(self) -> list[BoardConfig]:
+        return [board for board in self.boards if board.enabled]
