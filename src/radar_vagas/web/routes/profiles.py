@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
+from radar_vagas.canonicalization.normalize import normalize_text
 from radar_vagas.config.loaders import load_ui_config, write_ui_local_config
 from radar_vagas.config.schemas import UiConfig
 from radar_vagas.config.settings import Settings
@@ -249,7 +250,12 @@ def _manual_profile_from_form(
 
 
 def _skill_inputs(form: FormData, skills_text: str) -> list[SkillInput]:
-    names = _split_lines(skills_text)
+    inputs_by_name: dict[str, SkillInput] = {}
+    for name in _split_lines(skills_text):
+        _merge_skill_input(
+            inputs_by_name,
+            SkillInput(name=name),
+        )
     explicit_names = _values(form, "skill_name")
     categories = _values(form, "skill_category")
     levels = _values(form, "skill_level")
@@ -257,16 +263,9 @@ def _skill_inputs(form: FormData, skills_text: str) -> list[SkillInput]:
     evidence_descriptions = _values(form, "skill_evidence_description")
     evidence_sources = _values(form, "skill_evidence_source")
     evidence_types = _values(form, "skill_evidence_type")
-    for name in explicit_names:
-        if name:
-            names.append(name)
-    inputs: list[SkillInput] = []
-    seen: set[str] = set()
-    for index, name in enumerate(names):
-        cleaned = name.strip()
-        if not cleaned or cleaned.lower() in seen:
+    for index, name in enumerate(explicit_names):
+        if not name:
             continue
-        seen.add(cleaned.lower())
         evidence: list[EvidenceInput] = []
         title = _at(evidence_titles, index)
         if title:
@@ -279,15 +278,30 @@ def _skill_inputs(form: FormData, skills_text: str) -> list[SkillInput]:
                     evidence_type=parse_enum_value(ProfileEvidenceType, raw_type),
                 )
             )
-        inputs.append(
+        _merge_skill_input(
+            inputs_by_name,
             SkillInput(
-                name=cleaned,
+                name=name,
                 category=_at(categories, index),
                 level=_at(levels, index),
                 evidence=evidence,
-            )
+            ),
         )
-    return inputs
+    return list(inputs_by_name.values())
+
+
+def _merge_skill_input(inputs_by_name: dict[str, SkillInput], skill: SkillInput) -> None:
+    normalized = normalize_text(skill.name)
+    existing = inputs_by_name.get(normalized)
+    if existing is None:
+        inputs_by_name[normalized] = skill
+        return
+    inputs_by_name[normalized] = SkillInput(
+        name=skill.name or existing.name,
+        category=skill.category or existing.category,
+        level=skill.level or existing.level,
+        evidence=[*existing.evidence, *skill.evidence],
+    )
 
 
 def _experience_inputs(form: FormData) -> list[ExperienceInput]:

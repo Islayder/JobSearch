@@ -25,6 +25,12 @@ O `.gitignore` cobre:
 - demais `config/*.local.yaml` sensiveis;
 - credenciais e tokens locais.
 
+Fixtures, exemplos e mensagens de teste devem usar dados sinteticos. Caminhos
+de usuario real, e-mails pessoais, telefones, nomes reais de curriculo, cookies,
+tokens, links reais de reuniao e bancos SQLite locais nao devem aparecer em
+arquivos versionados. Quando for necessario demonstrar um caminho local, use um
+valor ficticio como `C:\Users\ExampleUser\...`.
+
 ## Curriculos
 
 Arquivos de curriculo pessoais devem ficar fora do Git. O sistema pode importar

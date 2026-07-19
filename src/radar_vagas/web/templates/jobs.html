@@ -136,14 +136,13 @@
       </thead>
       <tbody>
         {% for job in page.items %}
-          {% set latest_comparison = job.profile_comparisons|sort(attribute="created_at")|last %}
           <tr>
             <td><a href="/jobs/{{ job.id }}">{{ job.canonical_title }}</a></td>
             <td>{{ job.company.canonical_name }}</td>
             <td><span class="badge {{ job.status|status_class }}">{{ job.status|label }}</span></td>
             <td>{{ job.work_model|label }}</td>
             <td>{{ job.decision.ranking_score if job.decision and job.decision.ranking_score is not none else "-" }}</td>
-            <td>{{ latest_comparison.overall_score if latest_comparison else "-" }}</td>
+            <td>{{ job.current_comparison.overall_score if job.current_comparison else "-" }}</td>
             <td>{{ job.description|preview(140) }}</td>
           </tr>
         {% else %}

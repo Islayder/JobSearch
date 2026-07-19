@@ -19,6 +19,7 @@ from radar_vagas.web.queries.dashboard import dashboard_context
 from radar_vagas.web.queries.jobs import (
     JOB_TABS,
     JobFilters,
+    historical_comparisons,
     job_detail,
     jobs_page,
     latest_comparison,
@@ -50,6 +51,7 @@ __all__ = [
     "application_options",
     "applications_list",
     "dashboard_context",
+    "historical_comparisons",
     "job_detail",
     "job_options",
     "jobs_page",

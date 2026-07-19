@@ -62,12 +62,14 @@ A tela de perfil permite ajustar configuracoes basicas sem editar YAML.
   periodo e atalhos de retorno/teste/case/entrevista/oferta/rejeicao/retirada;
   o detalhe mostra timeline, agenda ligada e botoes de evento do fluxo.
 - Agenda: calendario mensal real de segunda a domingo, navegacao por mes,
-  filtros por tipo/origem/status/vaga/candidatura, itens sem data e transicoes
-  de confirmar, dispensar, concluir e cancelar.
+  filtros por tipo/origem/status/vaga/candidatura, mes em portugues sem depender
+  do locale do sistema, lista limitada ao mes selecionado, itens sem data e
+  transicoes de confirmar, dispensar, concluir e cancelar.
 - Perfil: perfil ativo, versoes, importacao, criacao manual, ativacao e
   comparacao em lote.
 - Fontes: saude de boards, consultas e execucoes recentes, com acao manual de
-  coleta em segundo plano.
+  coleta em segundo plano. Itens ignorados geram aviso, mas nao sao apresentados
+  automaticamente como execucao parcial.
 
 ## Seguranca Local
 
@@ -86,8 +88,17 @@ podem ficar registrados. O fluxo manual cria `ProfessionalProfileInput`
 diretamente, sem JSON temporario em `data/imports`.
 
 Habilidade digitada sem evidencia explicita e tratada como declarada, nao como
-comprovada. Experiencias e projetos podem comprovar habilidades quando
-referenciam a skill; a interface nao inventa evidencia.
+comprovada. Textarea e linhas estruturadas sao interpretados separadamente e
+depois mesclados por nome normalizado; categoria, nivel e evidencia pertencem
+somente a linha estruturada onde foram preenchidos. Experiencias e projetos
+podem comprovar habilidades quando referenciam a skill; a interface nao inventa
+evidencia.
+
+Na lista de vagas, compatibilidade significa analise atual: mesma vaga, perfil
+ativo, versao corrente das regras de perfil e hash atual do conteudo da vaga.
+Filtros, ordenacao e score exibido ignoram analises historicas. No detalhe, uma
+analise historica ainda fica acessivel, mas aparece como desatualizada quando o
+perfil, as regras ou o conteudo da vaga mudaram.
 
 ## Coleta Manual
 

@@ -272,6 +272,15 @@ class BatchProfileComparisonResult:
     comparison_ids: list[int]
 
 
+@dataclass(frozen=True)
+class ComparisonFreshness:
+    is_current: bool
+    reasons: tuple[str, ...]
+    current_profile_version_id: int | None
+    current_rules_version: str
+    current_job_content_hash: str
+
+
 def import_professional_profile(
     session: Session,
     file_path: Path,
@@ -606,6 +615,63 @@ def latest_comparison_for_job(
         .where(JobProfileComparison.job_id == job_id)
         .order_by(JobProfileComparison.created_at.desc(), JobProfileComparison.id.desc())
     )
+
+
+def current_comparison_for_job(
+    job: Job,
+    active_profile_version: ProfessionalProfileVersion | None,
+) -> JobProfileComparison | None:
+    if active_profile_version is None:
+        return None
+    current_hash = job_content_hash(job)
+    for comparison in job.profile_comparisons:
+        if (
+            comparison.profile_version_id == active_profile_version.id
+            and comparison.rules_version == PROFILE_RULES_VERSION
+            and comparison.job_content_hash == current_hash
+        ):
+            return comparison
+    return None
+
+
+def comparison_freshness(
+    job: Job,
+    comparison: JobProfileComparison | None,
+    active_profile_version: ProfessionalProfileVersion | None,
+) -> ComparisonFreshness:
+    current_hash = job_content_hash(job)
+    if comparison is None:
+        return ComparisonFreshness(
+            is_current=False,
+            reasons=(),
+            current_profile_version_id=active_profile_version.id
+            if active_profile_version is not None
+            else None,
+            current_rules_version=PROFILE_RULES_VERSION,
+            current_job_content_hash=current_hash,
+        )
+    reasons: list[str] = []
+    if active_profile_version is None:
+        reasons.append("perfil ativo ausente")
+    elif comparison.profile_version_id != active_profile_version.id:
+        reasons.append("perfil diferente")
+    if comparison.rules_version != PROFILE_RULES_VERSION:
+        reasons.append("regra diferente")
+    if comparison.job_content_hash != current_hash:
+        reasons.append("conteudo da vaga alterado")
+    return ComparisonFreshness(
+        is_current=not reasons,
+        reasons=tuple(reasons),
+        current_profile_version_id=active_profile_version.id
+        if active_profile_version is not None
+        else None,
+        current_rules_version=PROFILE_RULES_VERSION,
+        current_job_content_hash=current_hash,
+    )
+
+
+def job_content_hash(job: Job) -> str:
+    return _job_content_hash(job)
 
 
 def compare_active_jobs_to_profile(

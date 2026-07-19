@@ -78,3 +78,9 @@ lista do periodo e secao para eventos sem data. Filtros aceitam tipo, origem,
 status, vaga e candidatura. A criacao usa seletores de vaga e candidatura; IDs
 continuam sendo persistidos internamente, mas nao sao o fluxo principal para o
 usuario.
+
+Os nomes de mes da interface usam uma lista fixa em portugues, independente do
+locale do sistema operacional. A lista do periodo mostra apenas eventos datados
+dentro do mes selecionado e respeita os filtros atuais. Eventos sem data ficam
+somente na secao "Sem data". Os links de mes anterior/proximo preservam status,
+tipo, origem, vaga e candidatura por query string gerada pelo servidor.

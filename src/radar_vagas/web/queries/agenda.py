@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Select, select
@@ -19,6 +20,22 @@ from radar_vagas.domain.enums import (
 )
 from radar_vagas.domain.errors import RadarError
 from radar_vagas.persistence.models import Application, CareerEvent, Job
+
+MONTH_NAMES_PT = (
+    "",
+    "Janeiro",
+    "Fevereiro",
+    "Mar\u00e7o",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+)
 
 
 @dataclass(frozen=True)
@@ -47,8 +64,10 @@ class AgendaContext:
     previous_month: int
     next_year: int
     next_month: int
+    previous_query: str
+    next_query: str
     weeks: list[list[CalendarDay]]
-    upcoming_events: list[CareerEvent]
+    period_events: list[CareerEvent]
     undated_events: list[CareerEvent]
     job_options: list[Job]
     application_options: list[Application]
@@ -78,12 +97,16 @@ def agenda_context(
     today = datetime.now(tz).date()
     month_calendar = calendar.Calendar(firstweekday=0)
     events_by_day: dict[date, list[CareerEvent]] = {}
+    period_events: list[CareerEvent] = []
     undated: list[CareerEvent] = []
     for event in events:
         if event.starts_at is None:
             undated.append(event)
             continue
         local_day = _event_day(event, tz)
+        if local_day.year != year or local_day.month != month:
+            continue
+        period_events.append(event)
         events_by_day.setdefault(local_day, []).append(event)
     weeks = [
         [
@@ -104,13 +127,15 @@ def agenda_context(
     return AgendaContext(
         year=year,
         month=month,
-        month_label=f"{calendar.month_name[month]} {year}",
+        month_label=f"{MONTH_NAMES_PT[month]} {year}",
         previous_year=previous_year,
         previous_month=previous_month,
         next_year=next_year,
         next_month=next_month,
+        previous_query=_month_query(previous_year, previous_month, filters),
+        next_query=_month_query(next_year, next_month, filters),
         weeks=weeks,
-        upcoming_events=[event for event in events if event.starts_at is not None],
+        period_events=period_events,
         undated_events=undated,
         job_options=job_options(session),
         application_options=application_options(session),
@@ -193,6 +218,21 @@ def _valid_month(year: int, month: int) -> tuple[int, int]:
     if month < 1 or month > 12:
         raise RadarError("Mes da agenda invalido.")
     return year, month
+
+
+def _month_query(year: int, month: int, filters: AgendaFilters) -> str:
+    params: dict[str, str | int] = {"year": year, "month": month}
+    if filters.status is not None:
+        params["status"] = filters.status.value
+    if filters.event_type is not None:
+        params["event_type"] = filters.event_type.value
+    if filters.source is not None:
+        params["source"] = filters.source.value
+    if filters.job_id is not None:
+        params["job_id"] = filters.job_id
+    if filters.application_id is not None:
+        params["application_id"] = filters.application_id
+    return urlencode(params)
 
 
 def _optional_positive_int(value: str | None, label: str) -> int | None:

@@ -15,6 +15,7 @@ from radar_vagas.domain.enums import (
 )
 from radar_vagas.persistence.models import Application, CareerEvent, Job
 from radar_vagas.web.queries.profiles import active_profile_version
+from radar_vagas.web.queries.review import effective_review_state_condition
 from radar_vagas.web.queries.sources import source_health_summary
 
 
@@ -27,6 +28,22 @@ def dashboard_context(session: Session, *, page_size: int) -> dict[str, Any]:
         JobStatus.RECOMMENDED,
         JobStatus.SEEN,
     ]
+    review_today = list(
+        session.scalars(
+            select(Job)
+            .options(
+                selectinload(Job.company),
+                selectinload(Job.decision),
+                selectinload(Job.review_state),
+                selectinload(Job.postings),
+                selectinload(Job.profile_comparisons),
+            )
+            .where(Job.status.in_(review_statuses))
+            .where(effective_review_state_condition(ReviewState.UNREVIEWED))
+            .order_by(Job.updated_at.desc(), Job.id.desc())
+            .limit(6)
+        ).all()
+    )
     latest_jobs = list(
         session.scalars(
             select(Job)
@@ -96,7 +113,7 @@ def dashboard_context(session: Session, *, page_size: int) -> dict[str, Any]:
             "sources_with_problem": source_health["problem_count"],
             "page_size": page_size,
         },
-        "review_today": latest_jobs,
+        "review_today": review_today,
         "latest_jobs": latest_jobs,
         "upcoming_events": upcoming,
         "awaiting_update": awaiting_update,
@@ -168,7 +185,7 @@ def _review_count(
         session.scalar(
             select(func.count(Job.id))
             .where(Job.status.in_(allowed_statuses))
-            .where(Job.review_state.has(state=state))
+            .where(effective_review_state_condition(state))
         )
         or 0
     )

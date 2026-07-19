@@ -26,7 +26,7 @@ class SourceHealthRow:
     consecutive_failures: int
     items_found: int
     items_created: int
-    partial: bool
+    items_skipped: int
     message: str
 
 
@@ -119,7 +119,7 @@ def _source_row(source: Source) -> SourceHealthRow:
         consecutive_failures=0,
         items_found=last_run.items_found if last_run else 0,
         items_created=last_run.items_created if last_run else 0,
-        partial=bool(last_run and last_run.items_skipped),
+        items_skipped=last_run.items_skipped if last_run else 0,
         message=_run_message(last_run, state),
     )
 
@@ -139,7 +139,7 @@ def _board_row(board: CompanyBoard) -> SourceHealthRow:
         consecutive_failures=board.consecutive_failures,
         items_found=board.last_run.items_found if board.last_run else 0,
         items_created=board.last_run.items_created if board.last_run else 0,
-        partial=bool(board.last_run and board.last_run.items_skipped),
+        items_skipped=board.last_run.items_skipped if board.last_run else 0,
         message=_disabled_or_run_message(board.disabled_reason, board.last_run, state),
     )
 
@@ -158,7 +158,7 @@ def _query_row(query: SearchQuery) -> SourceHealthRow:
         consecutive_failures=query.consecutive_failures,
         items_found=query.last_run.items_found if query.last_run else 0,
         items_created=query.last_run.items_created if query.last_run else 0,
-        partial=bool(query.last_run and query.last_run.items_skipped),
+        items_skipped=query.last_run.items_skipped if query.last_run else 0,
         message=_disabled_or_run_message(query.disabled_reason, query.last_run, state),
     )
 

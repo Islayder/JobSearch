@@ -157,6 +157,12 @@
 
     <div class="card">
       <h2>Compatibilidade</h2>
+      {% if stale_comparison %}
+        <p class="notice warning">Existe uma análise anterior, mas ela está desatualizada</p>
+        {% if comparison_freshness.reasons %}
+          <p class="muted">Causa: {{ comparison_freshness.reasons|join(", ") }}.</p>
+        {% endif %}
+      {% endif %}
       {% if comparison %}
         <p><strong>{{ comparison.overall_score }}/100</strong></p>
         <p>{{ comparison.summary }}</p>
@@ -202,7 +208,19 @@
           {% endfor %}
         </div>
       {% else %}
-        <p class="empty">Nenhuma comparacao calculada.</p>
+        <p class="empty">Nenhuma comparacao atual calculada.</p>
+      {% endif %}
+      {% if historical_comparisons %}
+        <h3>Historico de analises</h3>
+        <div class="list">
+          {% for item in historical_comparisons %}
+            <div class="row">
+              <strong>{{ item.overall_score }}/100</strong>
+              {% if comparison and item.id == comparison.id %}<span class="badge healthy">atual</span>{% endif %}
+              <div class="muted">Perfil v{{ item.profile_version.version_number }} Â· {{ item.created_at|datetime(ui.timezone) }} Â· regras {{ item.rules_version }}</div>
+            </div>
+          {% endfor %}
+        </div>
       {% endif %}
     </div>
   </section>

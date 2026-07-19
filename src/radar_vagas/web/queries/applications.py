@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -37,17 +38,27 @@ class ApplicationFilters:
     shortcut: str | None = None
 
 
-def parse_application_filters(raw: dict[str, str | None]) -> ApplicationFilters:
+def parse_application_filters(
+    raw: dict[str, str | None],
+    *,
+    timezone: str,
+) -> ApplicationFilters:
     shortcut = _text(raw.get("shortcut"))
     if shortcut and shortcut not in APPLICATION_SHORTCUTS:
         raise RadarError("Atalho de candidatura invalido.")
+    from_day = _date(raw.get("from_date"), "periodo inicial")
+    to_day = _date(raw.get("to_date"), "periodo final")
+    if from_day is not None and to_day is not None and from_day > to_day:
+        raise RadarError("Periodo inicial nao pode ser posterior ao final.")
+    from_date = _local_day_start(from_day, timezone) if from_day is not None else None
+    to_date = _local_next_day_start(to_day, timezone) if to_day is not None else None
     return ApplicationFilters(
         company=_text(raw.get("company")),
         status=_enum(ApplicationStatus, raw.get("status"), "status da candidatura"),
         stage=_enum(ApplicationStage, raw.get("stage"), "etapa da candidatura"),
         platform=_text(raw.get("platform")),
-        from_date=_date(raw.get("from_date"), "periodo inicial"),
-        to_date=_date(raw.get("to_date"), "periodo final"),
+        from_date=from_date,
+        to_date=to_date,
         shortcut=shortcut,
     )
 
@@ -79,7 +90,7 @@ def applications_list(session: Session, *, filters: ApplicationFilters) -> list[
     if filters.from_date:
         statement = statement.where(Application.applied_at >= filters.from_date)
     if filters.to_date:
-        statement = statement.where(Application.applied_at <= filters.to_date)
+        statement = statement.where(Application.applied_at < filters.to_date)
     statement = _apply_shortcut(statement, filters.shortcut)
     return list(session.scalars(statement).unique().all())
 
@@ -146,11 +157,26 @@ def _enum[EnumType: ReadableEnum](
         raise RadarError(f"Filtro invalido para {label}: {exc}") from exc
 
 
-def _date(value: str | None, label: str) -> datetime | None:
+def _date(value: str | None, label: str) -> date | None:
     text = _text(value)
     if text is None:
         return None
     try:
-        return datetime.fromisoformat(text).replace(tzinfo=UTC)
+        return date.fromisoformat(text)
     except ValueError as exc:
         raise RadarError(f"Data invalida para {label}.") from exc
+
+
+def _timezone(timezone: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise RadarError(f"Timezone invalido para a interface: {timezone}.") from exc
+
+
+def _local_day_start(value: date, timezone: str) -> datetime:
+    return datetime.combine(value, time.min, tzinfo=_timezone(timezone)).astimezone(UTC)
+
+
+def _local_next_day_start(value: date, timezone: str) -> datetime:
+    return _local_day_start(value + timedelta(days=1), timezone)

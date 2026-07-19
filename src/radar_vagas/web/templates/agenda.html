@@ -7,8 +7,8 @@
       <p>Compromissos confirmados, sugestoes e itens sem data.</p>
     </div>
     <div class="actions">
-      <a class="button secondary" href="/agenda?year={{ agenda.previous_year }}&month={{ agenda.previous_month }}">Mes anterior</a>
-      <a class="button secondary" href="/agenda?year={{ agenda.next_year }}&month={{ agenda.next_month }}">Proximo mes</a>
+      <a class="button secondary" href="/agenda?{{ agenda.previous_query }}">Mes anterior</a>
+      <a class="button secondary" href="/agenda?{{ agenda.next_query }}">Proximo mes</a>
     </div>
   </section>
 
@@ -152,7 +152,7 @@
     <div class="card">
       <h2>Lista do periodo</h2>
       <div class="list">
-        {% for event in agenda.upcoming_events %}
+        {% for event in agenda.period_events %}
           <div class="row">
             <a href="/agenda/events/{{ event.id }}/edit"><strong>{{ event.title }}</strong></a>
             <div class="muted">{{ event.event_type|label }} · {{ event.starts_at|datetime(ui.timezone) }}</div>

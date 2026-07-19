@@ -51,7 +51,7 @@
               <td>{{ row.last_run.started_at|datetime(ui.timezone) if row.last_run else "-" }}</td>
               <td>{{ row.last_success_at|datetime(ui.timezone) }}</td>
               <td>{{ row.last_failed_at|datetime(ui.timezone) }}</td>
-              <td>{{ row.items_found }} / {{ row.items_created }}{% if row.partial %}<div class="muted">parcial</div>{% endif %}</td>
+              <td>{{ row.items_found }} / {{ row.items_created }}{% if row.items_skipped %}<div class="muted">itens ignorados: {{ row.items_skipped }}</div>{% endif %}</td>
               <td>{{ row.message }}</td>
             </tr>
           {% else %}

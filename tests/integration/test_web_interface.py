@@ -22,6 +22,7 @@ from radar_vagas.domain.enums import (
     ApplicationStage,
     ApplicationStatus,
     CareerEventConfirmationStatus,
+    CareerEventSource,
     CareerEventType,
     EligibilityStatus,
     EmploymentType,
@@ -29,6 +30,7 @@ from radar_vagas.domain.enums import (
     RelevanceStatus,
     RequirementMatchStatus,
     ReviewState,
+    SourceRunStatus,
     WorkModel,
 )
 from radar_vagas.persistence.database import session_scope
@@ -39,10 +41,12 @@ from radar_vagas.persistence.models import (
     Company,
     Decision,
     Job,
+    JobProfileComparison,
     JobReviewState,
     Posting,
     ProfessionalProfileVersion,
     Source,
+    SourceRun,
 )
 from radar_vagas.profile.service import compare_job_to_profile, import_professional_profile
 from radar_vagas.web.app import create_app
@@ -289,6 +293,93 @@ def test_web_applications_agenda_profile_and_sources(tmp_path: Path) -> None:
         assert event.completed_at is not None
 
 
+def test_web_application_date_filters_include_full_local_day(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        _create_application(
+            session,
+            title="Aplicacao Antes Local",
+            provider_identity_key="gupy:web-801",
+            applied_at=datetime(2026, 7, 20, 2, 59, tzinfo=UTC),
+        )
+        _create_application(
+            session,
+            title="Aplicacao Inicio Local",
+            provider_identity_key="gupy:web-802",
+            applied_at=datetime(2026, 7, 20, 3, 0, tzinfo=UTC),
+        )
+        _create_application(
+            session,
+            title="Aplicacao Meio Local",
+            provider_identity_key="gupy:web-803",
+            applied_at=datetime(2026, 7, 20, 17, 0, tzinfo=UTC),
+        )
+        _create_application(
+            session,
+            title="Aplicacao Fim Local",
+            provider_identity_key="gupy:web-804",
+            applied_at=datetime(2026, 7, 21, 2, 59, tzinfo=UTC),
+        )
+        _create_application(
+            session,
+            title="Aplicacao Depois Local",
+            provider_identity_key="gupy:web-805",
+            applied_at=datetime(2026, 7, 21, 3, 0, tzinfo=UTC),
+        )
+        _create_application(
+            session,
+            title="Aplicacao Sem Data",
+            provider_identity_key="gupy:web-806",
+            applied_at=None,
+        )
+
+    with TestClient(create_app(settings)) as client:
+        page = client.get("/applications?from_date=2026-07-20&to_date=2026-07-20")
+        assert page.status_code == 200
+        assert "Aplicacao Antes Local" not in page.text
+        assert "Aplicacao Inicio Local" in page.text
+        assert "Aplicacao Meio Local" in page.text
+        assert "Aplicacao Fim Local" in page.text
+        assert "Aplicacao Depois Local" not in page.text
+        assert "Aplicacao Sem Data" not in page.text
+
+
+def test_web_application_date_filters_support_utc_and_reject_inverted_period(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    (settings.config_dir / "ui.local.yaml").write_text("timezone: UTC\n", encoding="utf-8")
+    with session_scope(settings) as session:
+        _create_application(
+            session,
+            title="Aplicacao UTC Dentro",
+            provider_identity_key="gupy:web-811",
+            applied_at=datetime(2026, 7, 20, 23, 59, tzinfo=UTC),
+        )
+        _create_application(
+            session,
+            title="Aplicacao UTC Fora",
+            provider_identity_key="gupy:web-812",
+            applied_at=datetime(2026, 7, 21, 0, 0, tzinfo=UTC),
+        )
+
+    with TestClient(create_app(settings)) as client:
+        page = client.get("/applications?from_date=2026-07-20&to_date=2026-07-20")
+        assert page.status_code == 200
+        assert "Aplicacao UTC Dentro" in page.text
+        assert "Aplicacao UTC Fora" not in page.text
+
+        invalid = client.get("/applications?from_date=2026-07-21&to_date=2026-07-20")
+        assert invalid.status_code == 400
+        assert "Periodo inicial nao pode ser posterior ao final" in invalid.text
+
+
 def test_web_rejects_bad_upload_and_invalid_ids(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _write_runtime_config(settings)
@@ -304,6 +395,132 @@ def test_web_rejects_bad_upload_and_invalid_ids(tmp_path: Path) -> None:
         assert rejected.status_code == 400
         assert client.get("/jobs/-1").status_code == 404
         assert client.get("/jobs/999").status_code == 404
+
+
+def test_web_manual_profile_textarea_skills_have_no_implicit_evidence(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+
+    with TestClient(create_app(settings)) as client:
+        profile = client.get("/profile")
+        created = client.post(
+            "/profile/manual",
+            data={
+                "csrf_token": _csrf(profile.text),
+                "profile_name": "Perfil textarea",
+                "skills": "SQL\nPython",
+            },
+            follow_redirects=False,
+        )
+        assert created.status_code == 303
+
+    with session_scope(settings) as session:
+        version = session.scalar(
+            select(ProfessionalProfileVersion).order_by(ProfessionalProfileVersion.id.desc())
+        )
+        assert version is not None
+        assert [skill.name for skill in sorted(version.skills, key=lambda skill: skill.id)] == [
+            "SQL",
+            "Python",
+        ]
+        assert version.evidences == []
+
+
+def test_web_manual_profile_structured_skills_keep_own_evidence(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+
+    with TestClient(create_app(settings)) as client:
+        profile = client.get("/profile")
+        created = client.post(
+            "/profile/manual",
+            data={
+                "csrf_token": _csrf(profile.text),
+                "profile_name": "Perfil estruturado",
+                "skills": "",
+                "skill_name": ["SQL", "AWS"],
+                "skill_category": ["Dados", "Cloud"],
+                "skill_level": ["intermediario", "basico"],
+                "skill_evidence_title": ["Projeto SQL", ""],
+                "skill_evidence_description": ["Consultas analiticas", ""],
+                "skill_evidence_source": ["portfolio-sql", ""],
+                "skill_evidence_type": ["PROJECT", "PROJECT"],
+            },
+            follow_redirects=False,
+        )
+        assert created.status_code == 303
+
+    with session_scope(settings) as session:
+        version = session.scalar(
+            select(ProfessionalProfileVersion).order_by(ProfessionalProfileVersion.id.desc())
+        )
+        assert version is not None
+        skills = {skill.name: skill for skill in version.skills}
+        assert set(skills) == {"SQL", "AWS"}
+        assert skills["SQL"].category == "Dados"
+        assert skills["SQL"].level == "intermediario"
+        assert skills["AWS"].category == "Cloud"
+        assert skills["AWS"].level == "basico"
+        assert [evidence.title for evidence in skills["SQL"].evidences] == ["Projeto SQL"]
+        assert skills["AWS"].evidences == []
+
+
+def test_web_manual_profile_mixed_skills_merge_after_structured_binding(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+
+    with TestClient(create_app(settings)) as client:
+        profile = client.get("/profile")
+        created = client.post(
+            "/profile/manual",
+            data={
+                "csrf_token": _csrf(profile.text),
+                "profile_name": "Perfil misto",
+                "skills": "SQL\nPython",
+                "skill_name": ["AWS", "Python"],
+                "skill_category": ["Cloud", "Dados"],
+                "skill_level": ["intermediario", "avancado"],
+                "skill_evidence_title": ["Projeto AWS", ""],
+                "skill_evidence_description": ["Infraestrutura de dados", ""],
+                "skill_evidence_source": ["portfolio-aws", ""],
+                "skill_evidence_type": ["PROJECT", "PROJECT"],
+            },
+            follow_redirects=False,
+        )
+        assert created.status_code == 303
+
+    with session_scope(settings) as session:
+        version = session.scalar(
+            select(ProfessionalProfileVersion).order_by(ProfessionalProfileVersion.id.desc())
+        )
+        assert version is not None
+        ordered_skills = sorted(version.skills, key=lambda skill: skill.id)
+        assert [skill.name for skill in ordered_skills] == ["SQL", "Python", "AWS"]
+        skills = {skill.name: skill for skill in version.skills}
+        assert skills["SQL"].evidences == []
+        assert skills["Python"].level == "avancado"
+        assert skills["Python"].evidences == []
+        assert [evidence.title for evidence in skills["AWS"].evidences] == ["Projeto AWS"]
+
+        job = _create_job(
+            session,
+            title="Estagio Python",
+            provider_identity_key="gupy:web-350",
+        )
+        job.description = "Vaga sintetica para teste de perfil."
+        job.requirements = "Python avancado obrigatorio"
+        result = compare_job_to_profile(session, job.id)
+        assert any(
+            requirement.status is RequirementMatchStatus.NOT_PROVEN
+            and any(term["status"] == "not_proven" for term in requirement.term_results)
+            for requirement in result.requirements
+        )
 
 
 def test_web_bind_host_allows_only_loopback() -> None:
@@ -468,6 +685,177 @@ def test_web_job_filters_tabs_unshortlist_and_restore(tmp_path: Path) -> None:
         assert restored_job.review_state.state is ReviewState.UNREVIEWED
 
 
+def test_web_missing_review_state_is_effectively_unreviewed_without_get_backfill(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        active = _create_job(
+            session,
+            title="Vaga Antiga Sem Revisao",
+            provider_identity_key="gupy:web-601",
+            review_state=None,
+        )
+        closed = _create_job(
+            session,
+            title="Vaga Fechada Sem Revisao",
+            provider_identity_key="gupy:web-602",
+            review_state=None,
+        )
+        applied = _create_job(
+            session,
+            title="Vaga Aplicada Sem Revisao",
+            provider_identity_key="gupy:web-603",
+            review_state=None,
+        )
+        closed.status = JobStatus.CLOSED
+        applied.status = JobStatus.APPLIED
+        before_count = session.scalar(select(func.count(JobReviewState.id)))
+        active_id = active.id
+
+    with TestClient(create_app(settings)) as client:
+        tab_page = client.get("/jobs?tab=aguardando-revisao")
+        assert tab_page.status_code == 200
+        assert "Vaga Antiga Sem Revisao" in tab_page.text
+        assert "Vaga Fechada Sem Revisao" not in tab_page.text
+        assert "Vaga Aplicada Sem Revisao" not in tab_page.text
+
+        filter_page = client.get("/jobs?review=UNREVIEWED")
+        assert filter_page.status_code == 200
+        assert "Vaga Antiga Sem Revisao" in filter_page.text
+        assert "Vaga Fechada Sem Revisao" not in filter_page.text
+        assert "Vaga Aplicada Sem Revisao" not in filter_page.text
+
+        dashboard = client.get("/")
+        assert dashboard.status_code == 200
+        assert "Vaga Antiga Sem Revisao" in dashboard.text
+        assert "<strong>1</strong><span>nao revisadas</span>" in dashboard.text
+        detail = client.get(f"/jobs/{active_id}")
+        assert detail.status_code == 200
+
+    with session_scope(settings) as session:
+        assert session.scalar(select(func.count(JobReviewState.id))) == before_count
+        assert session.get(Job, active_id).review_state is None  # type: ignore[union-attr]
+
+
+def test_web_jobs_use_current_profile_comparison_in_list_filters_and_sort(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    v2_path = tmp_path / "professional-profile-v2.yaml"
+    v2_path.write_text(
+        """
+profile_name: Perfil Web
+summary: Perfil sintetico para testes.
+skills:
+  - name: Excel
+    level: intermediario
+    evidence:
+      - title: Projeto Excel
+        evidence_type: PROJECT
+experiences: []
+projects: []
+education: []
+languages: []
+""",
+        encoding="utf-8",
+    )
+    with session_scope(settings) as session:
+        historical = _create_job(
+            session,
+            title="Vaga Historica Alta",
+            provider_identity_key="gupy:web-701",
+        )
+        current = _create_job(
+            session,
+            title="Vaga Atual Excel",
+            provider_identity_key="gupy:web-702",
+        )
+        current.description = "Vaga sintetica com Excel."
+        current.requirements = "Excel"
+        high_score = compare_job_to_profile(session, historical.id).overall_score
+        assert high_score >= 80
+        import_professional_profile(session, v2_path, activate=True)
+        current_score = compare_job_to_profile(session, current.id).overall_score
+        assert current_score >= 80
+        historical_id = historical.id
+
+    with TestClient(create_app(settings)) as client:
+        with_compatibility = client.get("/jobs?only_with_compatibility=on")
+        assert with_compatibility.status_code == 200
+        assert "Vaga Atual Excel" in with_compatibility.text
+        assert "Vaga Historica Alta" not in with_compatibility.text
+
+        min_compatibility = client.get("/jobs?min_compatibility=80")
+        assert min_compatibility.status_code == 200
+        assert "Vaga Atual Excel" in min_compatibility.text
+        assert "Vaga Historica Alta" not in min_compatibility.text
+
+        sorted_page = client.get("/jobs?sort=compatibility")
+        assert sorted_page.status_code == 200
+        assert sorted_page.text.index("Vaga Atual Excel") < sorted_page.text.index(
+            "Vaga Historica Alta"
+        )
+
+        stale_detail = client.get(f"/jobs/{historical_id}")
+        assert stale_detail.status_code == 200
+        assert "Existe uma análise anterior, mas ela está desatualizada" in stale_detail.text
+        assert "perfil diferente" in stale_detail.text
+        token = _csrf(stale_detail.text)
+        compared = client.post(
+            f"/jobs/{historical_id}/compare",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert compared.status_code == 303
+        refreshed = client.get("/jobs?only_with_compatibility=on&q=Historica")
+        assert "Vaga Historica Alta" in refreshed.text
+
+
+def test_web_stale_profile_comparison_detects_content_and_rule_changes(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        content_job = _create_job(
+            session,
+            title="Vaga Conteudo Mutavel",
+            provider_identity_key="gupy:web-711",
+        )
+        rule_job = _create_job(
+            session,
+            title="Vaga Regra Mutavel",
+            provider_identity_key="gupy:web-712",
+        )
+        compare_job_to_profile(session, content_job.id)
+        compare_job_to_profile(session, rule_job.id)
+        content_job.description = "Descricao atualizada depois da analise."
+        rule_comparison = session.scalar(
+            select(JobProfileComparison).where(JobProfileComparison.job_id == rule_job.id)
+        )
+        assert rule_comparison is not None
+        rule_comparison.rules_version = "old-profile-rules"
+        content_id = content_job.id
+        rule_id = rule_job.id
+
+    with TestClient(create_app(settings)) as client:
+        content_detail = client.get(f"/jobs/{content_id}")
+        assert content_detail.status_code == 200
+        assert "Existe uma análise anterior, mas ela está desatualizada" in content_detail.text
+        assert "conteudo da vaga alterado" in content_detail.text
+
+        rule_detail = client.get(f"/jobs/{rule_id}")
+        assert rule_detail.status_code == 200
+        assert "Existe uma análise anterior, mas ela está desatualizada" in rule_detail.text
+        assert "regra diferente" in rule_detail.text
+
+
 def test_web_agenda_month_selects_and_meeting_url_validation(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _write_runtime_config(settings)
@@ -535,6 +923,144 @@ def test_web_agenda_month_selects_and_meeting_url_validation(tmp_path: Path) -> 
         assert "Follow-up sem data" in refreshed.text
 
 
+def test_web_agenda_period_is_localized_limited_and_preserves_filters(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        application = _create_application(
+            session,
+            title="Vaga Agenda Filtrada",
+            provider_identity_key="gupy:web-821",
+            applied_at=datetime(2026, 7, 1, 12, 0, tzinfo=UTC),
+        )
+        job_id = application.job_id
+        application_id = application.id
+        events = [
+            CareerEvent(
+                job_id=job_id,
+                application_id=application_id,
+                event_type=CareerEventType.INTERVIEW,
+                title="Evento Junho",
+                starts_at=datetime(2026, 6, 30, 14, 0, tzinfo=UTC),
+                ends_at=None,
+                timezone="America/Sao_Paulo",
+                source=CareerEventSource.MANUAL,
+                confirmation_status=CareerEventConfirmationStatus.CONFIRMED,
+            ),
+            CareerEvent(
+                job_id=job_id,
+                application_id=application_id,
+                event_type=CareerEventType.INTERVIEW,
+                title="Evento Julho Manha",
+                starts_at=datetime(2026, 7, 20, 12, 0, tzinfo=UTC),
+                ends_at=None,
+                timezone="America/Sao_Paulo",
+                source=CareerEventSource.MANUAL,
+                confirmation_status=CareerEventConfirmationStatus.CONFIRMED,
+            ),
+            CareerEvent(
+                job_id=job_id,
+                application_id=application_id,
+                event_type=CareerEventType.INTERVIEW,
+                title="Evento Julho Tarde",
+                starts_at=datetime(2026, 7, 20, 18, 0, tzinfo=UTC),
+                ends_at=None,
+                timezone="America/Sao_Paulo",
+                source=CareerEventSource.MANUAL,
+                confirmation_status=CareerEventConfirmationStatus.CONFIRMED,
+            ),
+            CareerEvent(
+                job_id=job_id,
+                application_id=application_id,
+                event_type=CareerEventType.INTERVIEW,
+                title="Evento Agosto",
+                starts_at=datetime(2026, 8, 1, 12, 0, tzinfo=UTC),
+                ends_at=None,
+                timezone="America/Sao_Paulo",
+                source=CareerEventSource.MANUAL,
+                confirmation_status=CareerEventConfirmationStatus.CONFIRMED,
+            ),
+            CareerEvent(
+                job_id=job_id,
+                application_id=application_id,
+                event_type=CareerEventType.INTERVIEW,
+                title="Evento Sem Data Filtrado",
+                starts_at=None,
+                ends_at=None,
+                timezone="America/Sao_Paulo",
+                source=CareerEventSource.MANUAL,
+                confirmation_status=CareerEventConfirmationStatus.CONFIRMED,
+            ),
+        ]
+        session.add_all(events)
+
+    query = (
+        "/agenda?year=2026&month=7&status=CONFIRMED&event_type=INTERVIEW"
+        f"&source=MANUAL&job_id={job_id}&application_id={application_id}"
+    )
+    with TestClient(create_app(settings)) as client:
+        page = client.get(query)
+        assert page.status_code == 200
+        assert "Julho 2026" in page.text
+        assert "Evento Julho Manha" in page.text
+        assert "Evento Julho Tarde" in page.text
+        assert "Evento Junho" not in page.text
+        assert "Evento Agosto" not in page.text
+        assert (
+            f"/agenda?year=2026&amp;month=6&amp;status=CONFIRMED&amp;event_type=INTERVIEW"
+            f"&amp;source=MANUAL&amp;job_id={job_id}&amp;application_id={application_id}"
+            in page.text
+        )
+        assert (
+            f"/agenda?year=2026&amp;month=8&amp;status=CONFIRMED&amp;event_type=INTERVIEW"
+            f"&amp;source=MANUAL&amp;job_id={job_id}&amp;application_id={application_id}"
+            in page.text
+        )
+        period_section = page.text.split("<h2>Lista do periodo</h2>", 1)[1].split(
+            "<h2>Sem data</h2>",
+            1,
+        )[0]
+        undated_section = page.text.split("<h2>Sem data</h2>", 1)[1]
+        assert "Evento Sem Data Filtrado" not in period_section
+        assert "Evento Sem Data Filtrado" in undated_section
+
+
+def test_web_source_health_labels_skipped_items_without_partial_claim(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    with session_scope(settings) as session:
+        source = Source(
+            name="Fonte com itens ignorados",
+            slug="skipped-items",
+            source_type="gupy",
+            base_url="https://jobs.example.com",
+        )
+        session.add(source)
+        session.flush()
+        session.add(
+            SourceRun(
+                source_id=source.id,
+                started_at=datetime(2026, 7, 19, 12, 0, tzinfo=UTC),
+                finished_at=datetime(2026, 7, 19, 12, 1, tzinfo=UTC),
+                status=SourceRunStatus.SUCCESS,
+                items_found=10,
+                items_created=8,
+                items_skipped=2,
+            )
+        )
+
+    with TestClient(create_app(settings)) as client:
+        page = client.get("/sources")
+        assert page.status_code == 200
+        assert "itens ignorados: 2" in page.text
+        assert "parcial" not in page.text
+
+
 def test_web_collection_background_status_sanitizes_and_blocks_double_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -552,7 +1078,7 @@ def test_web_collection_background_status_sanitizes_and_blocks_double_start(
         release.wait(timeout=5)
         raise RuntimeError(
             "Traceback (most recent call last): https://example.com/jobs?token=abc "
-            "C:\\Users\\Islayder\\secret\\profile.yaml"
+            "C:\\Users\\ExampleUser\\secret\\profile.yaml"
         )
 
     monkeypatch.setattr("radar_vagas.web.collection.run_search_plan", fake_run_search_plan)
@@ -649,6 +1175,7 @@ def _create_job(
     *,
     title: str = "Estagio em Dados",
     provider_identity_key: str,
+    review_state: ReviewState | None = ReviewState.UNREVIEWED,
 ) -> Job:
     source = session.scalar(select(Source).where(Source.slug == "web-tests"))
     if source is None:
@@ -718,11 +1245,32 @@ def _create_job(
         relevance_reason_json="{}",
         relevance_rules_version="test",
     )
-    session.add_all(
-        [posting, decision, JobReviewState(job_id=job.id, state=ReviewState.UNREVIEWED)]
-    )
+    session.add_all([posting, decision])
+    if review_state is not None:
+        session.add(JobReviewState(job_id=job.id, state=review_state))
     session.flush()
     return job
+
+
+def _create_application(
+    session: Session,
+    *,
+    title: str,
+    provider_identity_key: str,
+    applied_at: datetime | None,
+) -> Application:
+    job = _create_job(session, title=title, provider_identity_key=provider_identity_key)
+    application = Application(
+        job_id=job.id,
+        application_key=application_key_for_job(job),
+        status=ApplicationStatus.SUBMITTED,
+        stage=ApplicationStage.APPLIED,
+        applied_at=applied_at,
+        platform="gupy",
+    )
+    session.add(application)
+    session.flush()
+    return application
 
 
 def _csrf(html: str) -> str:

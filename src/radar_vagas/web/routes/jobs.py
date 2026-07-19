@@ -24,10 +24,16 @@ from radar_vagas.domain.enums import (
     WorkModel,
     parse_enum_value,
 )
-from radar_vagas.profile.service import compare_job_to_profile
+from radar_vagas.profile.service import (
+    compare_job_to_profile,
+    comparison_freshness,
+    current_comparison_for_job,
+)
 from radar_vagas.web.dependencies import get_session, get_settings
 from radar_vagas.web.queries import (
     JOB_TABS,
+    active_profile_version,
+    historical_comparisons,
     job_detail,
     jobs_page,
     latest_comparison,
@@ -133,7 +139,11 @@ def job(
     item = job_detail(session, job_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
-    comparison = latest_comparison(item)
+    profile_version = active_profile_version(session)
+    comparison = current_comparison_for_job(item, profile_version)
+    latest = latest_comparison(item)
+    stale_comparison = latest if comparison is None else None
+    freshness = comparison_freshness(item, stale_comparison or comparison, profile_version)
     return render(
         request,
         "job_detail.html",
@@ -142,7 +152,11 @@ def job(
             "review_state": review_state_for(item),
             "actions": valid_job_actions(item),
             "comparison": comparison,
+            "stale_comparison": stale_comparison,
+            "comparison_freshness": freshness,
+            "historical_comparisons": historical_comparisons(item),
             "comparison_identity": _comparison_identity(comparison),
+            "stale_comparison_identity": _comparison_identity(stale_comparison),
             "dismiss_reasons": DISMISS_REASONS,
             "event_types": CAREER_EVENT_LABELS,
             "application_url": safe_external_url(item.application_url),

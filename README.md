@@ -166,8 +166,14 @@ radar web --port 8001 --no-open-browser
 Na interface web, uploads de perfil sao processados em memoria com limite de
 tamanho e nao ficam gravados em `data/imports`. A criacao manual de perfil salva
 uma nova versao estruturada diretamente no banco; habilidades digitadas sem
-evidencia explicita continuam como declaradas, nao comprovadas. A tela de fontes
-inicia coletas manuais em segundo plano, uma por vez, e mostra somente mensagens
+evidencia explicita continuam como declaradas, nao comprovadas. Quando textarea
+e linhas estruturadas informam a mesma habilidade, o Radar faz merge por nome
+normalizado e associa nivel/categoria/evidencia apenas a linha estruturada
+correspondente. A listagem de vagas mostra compatibilidade somente quando a
+analise corresponde ao perfil ativo, versao atual das regras e conteudo atual da
+vaga; analises antigas permanecem no historico do detalhe. A tela de fontes
+inicia coletas manuais em segundo plano, uma por vez, mostra itens ignorados sem
+chamar isso automaticamente de execucao parcial e exibe somente mensagens
 sanitizadas.
 
 ## Marco 4.1

@@ -29,6 +29,13 @@ radar restore-job 123
 Cada acao grava um `JobReviewEvent` append-only. O estado atual fica em
 `JobReviewState`, uma linha por vaga.
 
+Para leitura, a ausencia de `JobReviewState` explicito equivale a
+`UNREVIEWED`. Essa regra preserva vagas antigas que ainda nao tinham linha de
+revisao. `JobReviewState` explicito sempre prevalece, e vagas `APPLIED`,
+`DISMISSED`, `CLOSED`, `EXPIRED` ou `ARCHIVED` nao entram como nao revisadas
+apenas por falta da linha. Consultas GET da CLI ou da web nao fazem backfill; a
+linha fisica continua sendo criada somente por acoes mutaveis.
+
 As transicoes aceitas sao controladas por uma politica unica:
 
 - `UNREVIEWED` pode virar `SEEN`, `SHORTLISTED`, `DISMISSED` ou `APPLIED`.

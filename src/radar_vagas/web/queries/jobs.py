@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal
 
-from sqlalchemy import Select, desc, exists, func, or_, select
+from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from radar_vagas.applications.review import current_review_state
@@ -27,7 +28,10 @@ from radar_vagas.persistence.models import (
     JobProfileComparison,
     Posting,
 )
+from radar_vagas.profile.service import current_comparison_for_job
 from radar_vagas.web.queries.common import Page
+from radar_vagas.web.queries.profiles import active_profile_version
+from radar_vagas.web.queries.review import effective_review_state_condition
 
 JobSort = Literal[
     "recommendation",
@@ -119,8 +123,6 @@ def jobs_page(
     selected_sort = _parse_sort(sort)
     base = select(Job.id).join(Company)
     base = _apply_job_filters(base, filters)
-    total = int(session.scalar(select(func.count()).select_from(base.subquery())) or 0)
-
     statement = select(Job).where(Job.id.in_(base))
     statement = statement.options(
         selectinload(Job.company),
@@ -130,11 +132,13 @@ def jobs_page(
         selectinload(Job.applications),
         selectinload(Job.profile_comparisons),
     )
-    statement = _apply_job_sort(statement, selected_sort)
-    items = list(
-        session.scalars(statement.offset((page - 1) * page_size).limit(page_size)).unique().all()
-    )
-    return Page(items=items, page=page, page_size=page_size, total=total)
+    items = list(session.scalars(statement).unique().all())
+    _attach_current_comparisons(session, items)
+    items = _apply_current_comparison_filters(items, filters)
+    items = _sort_loaded_jobs(items, selected_sort)
+    total = len(items)
+    start = (page - 1) * page_size
+    return Page(items=items[start : start + page_size], page=page, page_size=page_size, total=total)
 
 
 def job_detail(session: Session, job_id: int) -> Job | None:
@@ -163,6 +167,14 @@ def latest_comparison(job: Job) -> JobProfileComparison | None:
     if not job.profile_comparisons:
         return None
     return max(job.profile_comparisons, key=lambda comparison: comparison.created_at)
+
+
+def historical_comparisons(job: Job) -> list[JobProfileComparison]:
+    return sorted(
+        job.profile_comparisons,
+        key=lambda comparison: (comparison.created_at, comparison.id),
+        reverse=True,
+    )
 
 
 def review_state_for(job: Job) -> ReviewState:
@@ -221,7 +233,7 @@ def _apply_job_filters(statement: Select[tuple[int]], filters: JobFilters) -> Se
     if filters.status:
         statement = statement.where(Job.status == filters.status)
     if filters.review:
-        statement = statement.where(Job.review_state.has(state=filters.review))
+        statement = statement.where(effective_review_state_condition(filters.review))
     if filters.employment_type:
         statement = statement.where(Job.employment_type == filters.employment_type)
     if filters.work_model:
@@ -246,19 +258,6 @@ def _apply_job_filters(statement: Select[tuple[int]], filters: JobFilters) -> Se
         )
     if filters.min_ranking is not None:
         statement = statement.where(Job.decision.has(Decision.ranking_score >= filters.min_ranking))
-    if filters.min_compatibility is not None:
-        statement = statement.where(
-            exists(
-                select(1).where(
-                    JobProfileComparison.job_id == Job.id,
-                    JobProfileComparison.overall_score >= filters.min_compatibility,
-                )
-            )
-        )
-    if filters.only_with_compatibility:
-        statement = statement.where(exists(select(1).where(JobProfileComparison.job_id == Job.id)))
-    if filters.only_without_compatibility:
-        statement = statement.where(~exists(select(1).where(JobProfileComparison.job_id == Job.id)))
     statement = _apply_tab(statement, filters.tab)
     if (
         not filters.tab
@@ -280,7 +279,7 @@ def _apply_tab(statement: Select[tuple[int]], tab: str | None) -> Select[tuple[i
     if tab == "aplicadas":
         return statement.where(Job.status == JobStatus.APPLIED)
     if tab == "aguardando-revisao":
-        return statement.where(Job.review_state.has(state=ReviewState.UNREVIEWED))
+        return statement.where(effective_review_state_condition(ReviewState.UNREVIEWED))
     if tab == "descartadas":
         return statement.where(Job.status == JobStatus.DISMISSED)
     if tab == "encerradas":
@@ -288,27 +287,66 @@ def _apply_tab(statement: Select[tuple[int]], tab: str | None) -> Select[tuple[i
     return statement
 
 
-def _apply_job_sort(statement: Select[tuple[Job]], sort: JobSort) -> Select[tuple[Job]]:
-    first_seen = select(func.min(Posting.first_seen_at)).where(Posting.job_id == Job.id)
-    compatibility = select(func.max(JobProfileComparison.overall_score)).where(
-        JobProfileComparison.job_id == Job.id
-    )
+def _attach_current_comparisons(session: Session, jobs: list[Job]) -> None:
+    profile_version = active_profile_version(session)
+    for job in jobs:
+        job.current_comparison = current_comparison_for_job(job, profile_version)  # type: ignore[attr-defined]
+
+
+def _apply_current_comparison_filters(jobs: list[Job], filters: JobFilters) -> list[Job]:
+    filtered: list[Job] = []
+    for job in jobs:
+        comparison = getattr(job, "current_comparison", None)
+        if filters.only_with_compatibility and comparison is None:
+            continue
+        if filters.only_without_compatibility and comparison is not None:
+            continue
+        if filters.min_compatibility is not None and (
+            comparison is None or comparison.overall_score < filters.min_compatibility
+        ):
+            continue
+        filtered.append(job)
+    return filtered
+
+
+def _sort_loaded_jobs(jobs: list[Job], sort: JobSort) -> list[Job]:
     if sort == "publication" or sort == "newest":
-        return statement.order_by(desc(Job.published_at), Job.id.desc())
+        return sorted(jobs, key=lambda job: (_date_value(job.published_at), job.id), reverse=True)
     if sort == "first-seen":
-        return statement.order_by(desc(first_seen.scalar_subquery()), Job.id.desc())
+        return sorted(jobs, key=lambda job: (_date_value(_first_seen(job)), job.id), reverse=True)
     if sort == "compatibility":
-        return statement.order_by(desc(compatibility.scalar_subquery()), Job.id.desc())
+        return sorted(jobs, key=lambda job: (_current_score(job), job.id), reverse=True)
     if sort == "company":
-        return statement.join(Company).order_by(Company.normalized_name.asc(), Job.id.asc())
+        return sorted(jobs, key=lambda job: (job.company.normalized_name, job.id))
     if sort == "title":
-        return statement.order_by(Job.normalized_title.asc(), Job.id.asc())
-    return statement.outerjoin(Decision).order_by(
-        Decision.ranking_score.desc().nullslast(),
-        Decision.relevance_score.desc().nullslast(),
-        desc(compatibility.scalar_subquery()),
-        Job.id.asc(),
+        return sorted(jobs, key=lambda job: (job.normalized_title, job.id))
+    return sorted(
+        jobs,
+        key=lambda job: (
+            job.decision.ranking_score if job.decision and job.decision.ranking_score else -1,
+            job.decision.relevance_score if job.decision and job.decision.relevance_score else -1,
+            _current_score(job),
+            -job.id,
+        ),
+        reverse=True,
     )
+
+
+def _current_score(job: Job) -> int:
+    comparison = getattr(job, "current_comparison", None)
+    return comparison.overall_score if comparison is not None else -1
+
+
+def _first_seen(job: Job) -> datetime | None:
+    dates = [posting.first_seen_at for posting in job.postings if posting.first_seen_at is not None]
+    return min(dates) if dates else None
+
+
+def _date_value(value: datetime | None) -> float:
+    if value is None:
+        return 0
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return aware.timestamp()
 
 
 def _parse_sort(value: str) -> JobSort:

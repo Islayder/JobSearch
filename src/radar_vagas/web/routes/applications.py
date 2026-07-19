@@ -34,6 +34,7 @@ router = APIRouter(prefix="/applications")
 @router.get("", response_class=HTMLResponse)
 def applications(
     request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_session)],
     company: str | None = None,
     status: str | None = None,
@@ -52,7 +53,8 @@ def applications(
         "to_date": to_date,
         "shortcut": shortcut,
     }
-    filters = parse_application_filters(raw_filters)
+    ui = load_ui_config(settings.config_dir)
+    filters = parse_application_filters(raw_filters, timezone=ui.timezone)
     return render(
         request,
         "applications.html",

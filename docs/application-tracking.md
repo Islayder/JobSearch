@@ -32,6 +32,11 @@ plataforma, periodo e atalhos operacionais: aguardando retorno, teste/case,
 entrevista, oferta, rejeitadas e retiradas. O detalhe mostra dados da vaga,
 timeline, agenda ligada, notas e pagina oficial quando houver URL segura.
 
+No filtro web por periodo, `from_date` e `to_date` sao interpretados no timezone
+configurado da interface. `from_date` e o inicio local do dia; `to_date` inclui
+o dia inteiro usando o inicio do dia seguinte como limite exclusivo em UTC.
+Candidaturas sem `applied_at` nao aparecem quando ha filtro de periodo.
+
 ## Eventos
 
 ```powershell

@@ -35,6 +35,11 @@ hash/formato/origem sanitizada e descarta o conteudo original. A criacao manual
 na web usa `ProfessionalProfileInput` diretamente e nao cria JSON em
 `data/imports`.
 
+No formulario manual, habilidades digitadas no textarea e habilidades em linhas
+estruturadas sao lidas em etapas separadas. Depois, o Radar faz merge por nome
+normalizado. Categoria, nivel e evidencia ficam vinculados somente a linha
+estruturada correspondente; uma evidencia vazia nao cria registro implicito.
+
 ```powershell
 radar activate-profile 1
 ```
@@ -86,9 +91,12 @@ termo em JSON. Registros antigos sem esses campos continuam legiveis como
 historico legado.
 
 Reexecutar a mesma comparacao para a mesma vaga, versao do perfil, versao das
-regras e hash do conteudo retorna o registro existente. Quando a vaga, o perfil
-ou as regras mudam, o Radar cria uma nova comparacao e preserva a anterior para
-auditoria.
+regras e hash do conteudo retorna o registro existente. Uma comparacao e atual
+somente quando esses quatro pontos correspondem ao estado corrente: `job_id`,
+perfil ativo, `PROFILE_RULES_VERSION` atual e hash atual do conteudo da vaga.
+Quando a vaga, o perfil ou as regras mudam, o Radar cria uma nova comparacao e
+preserva a anterior para auditoria. A interface mostra aviso de analise
+desatualizada quando so existe historico antigo.
 
 Categorias:
 
