@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "id": 1003,
+      "companyId": 12,
+      "name": "Auxiliar Administrativo",
+      "description": "<p>Cadastro de dados e atendimento ao cliente.</p>",
+      "careerPageId": 22,
+      "careerPageName": "Empresa Operacional",
+      "careerPageUrl": "https://empresaoperacional.gupy.io/",
+      "type": "vacancy_type_effective",
+      "publishedDate": "2026-07-12T12:00:00.000Z",
+      "applicationDeadline": "2026-08-12T23:59:59.000Z",
+      "isRemoteWork": false,
+      "city": "Sao Paulo",
+      "state": "SP",
+      "country": "Brasil",
+      "jobUrl": "https://empresaoperacional.gupy.io/jobs/1003?jobBoardSource=gupy_portal",
+      "badges": [],
+      "workplaceType": "on-site",
+      "disabilities": [],
+      "skills": []
+    }
+  ],
+  "pagination": {
+    "total": 3,
+    "limit": 2,
+    "offset": 2
+  }
+}

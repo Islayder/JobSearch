@@ -18,6 +18,9 @@ class CollectionSummary:
     eligible: int = 0
     manual_review: int = 0
     ineligible: int = 0
+    core: int = 0
+    adjacent: int = 0
+    unrelated: int = 0
     closed: int = 0
     reopened: int = 0
     invalid_items: int = 0
@@ -33,6 +36,9 @@ class CollectionSummary:
             "eligible": self.eligible,
             "manual_review": self.manual_review,
             "ineligible": self.ineligible,
+            "core": self.core,
+            "adjacent": self.adjacent,
+            "unrelated": self.unrelated,
             "closed": self.closed,
             "reopened": self.reopened,
             "invalid_items": self.invalid_items,

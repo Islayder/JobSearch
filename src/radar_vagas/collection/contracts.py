@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from radar_vagas.config.schemas import CollectionConfig
+from radar_vagas.domain.enums import CollectionAuthority
 from radar_vagas.domain.errors import RadarError
 from radar_vagas.http.client import HttpClient
 from radar_vagas.ingestion.import_schema import ImportedPosting
@@ -27,8 +28,13 @@ class CollectionContext:
     board_token: str | None = None
     url: str | None = None
     collection_scope_key: str | None = None
+    authority: CollectionAuthority = CollectionAuthority.SINGLE_PAGE
+    query_key: str | None = None
+    query_mode: str | None = None
+    query_parameters: dict[str, Any] = field(default_factory=dict)
     dry_run: bool = False
     max_items: int | None = None
+    max_pages: int | None = None
     since: datetime | None = None
     http_client: HttpClient | None = None
     collection_config: CollectionConfig = field(default_factory=CollectionConfig)

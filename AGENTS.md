@@ -40,6 +40,9 @@ radar collect-all --dry-run
 radar collectors
 radar boards
 radar source-health
+radar queries
+radar collect-query gupy-estagio-dados --dry-run
+radar query-health
 radar evaluate-all
 radar list-jobs
 radar stats
@@ -73,6 +76,10 @@ mypy src
 - Nao implemente POST, candidatura, login, cookies de sessao, CAPTCHA, proxy, rotacao de user-agent ou Playwright.
 - Toda coleta persistida deve registrar `SourceRun`.
 - Identidade incremental de board deve usar escopo estavel de coletor e key/token/URL, nunca somente nome de empresa.
+- Consultas de descoberta devem usar `CollectionAuthority.DISCOVERY_QUERY`; elas nunca incrementam `missing_count` e nunca fecham publicacoes ou vagas por ausencia.
+- Board autoritativo so pode fechar por ausencia em snapshot completo, bem-sucedido, nao parcial, nao truncado e sem itens invalidos que comprometam completude.
+- Quando conhecida, a identidade de plataforma deve preencher `Posting.provider_identity_key`: `gupy:<job_id>`, `greenhouse:<board_token>:<job_id>`, `lever:<board_token>:<posting_id>` ou `jobposting:<normalized_url>`.
+- `config/search_queries.local.yaml` e override local ignorado pelo Git e nao deve ser versionado.
 - Snapshot parcial ou truncado nunca deve incrementar ausencia nem fechar publicacao.
 - `last_seen_at` representa a ultima execucao em que a publicacao apareceu; ausencia nao atualiza esse campo.
 - Reaparecimento deve reabrir publicacao, zerar ausencias e reavaliar a vaga quando ela nao estiver protegida por candidatura ou descarte humano.

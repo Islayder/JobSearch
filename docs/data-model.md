@@ -13,11 +13,14 @@ erDiagram
     SOURCE ||--o{ COMPANY_BOARD : lists
     SOURCE_RUN ||--o{ POSTING : last_seen_in
     SOURCE_RUN ||--o{ POSTING_REVISION : observed
+    SOURCE_RUN ||--o{ DISCOVERY_HIT : observed
     COMPANY ||--o{ COMPANY_ALIAS : has
     COMPANY ||--o{ COMPANY_BOARD : owns
     COMPANY ||--o{ JOB : offers
+    SEARCH_QUERY ||--o{ DISCOVERY_HIT : finds
     JOB ||--o{ POSTING : groups
     POSTING ||--o{ POSTING_REVISION : changed_by
+    POSTING ||--o{ DISCOVERY_HIT : seen_in
     JOB ||--o| DECISION : evaluated_by
     JOB ||--o{ APPLICATION : applied_to
     APPLICATION ||--o{ APPLICATION_EVENT : has
@@ -57,6 +60,10 @@ normalizadas do nome.
 fonte e associacao opcional a `Job`. Para coleta incremental, tambem guarda:
 
 - `collection_scope_key`
+- `provider`
+- `provider_scope`
+- `provider_external_id`
+- `provider_identity_key`
 - `is_active`
 - `missing_count`
 - `closed_reason`
@@ -65,6 +72,21 @@ fonte e associacao opcional a `Job`. Para coleta incremental, tambem guarda:
 e o mesmo nome de empresa. O escopo e derivado de coletor e `key`, `board_token`
 ou URL. `company_name` fica apenas como dado auxiliar de exibicao e
 normalizacao.
+
+`provider_identity_key` e unica quando presente e representa identidade estavel
+da plataforma. Exemplos: `gupy:<job_id>`,
+`greenhouse:<board_token>:<job_id>`, `lever:<board_token>:<posting_id>` e
+`jobposting:<normalized_url>`. Importacoes antigas podem manter esses campos
+nulos quando nao houver evidencia suficiente.
+
+`SearchQuery` representa uma consulta de descoberta configurada. Ela guarda key,
+coletor, modo, configuracao JSON, fingerprint deterministico, escopo estavel,
+prioridade, tags, status e historico de execucao.
+
+`DiscoveryHit` registra que uma consulta encontrou uma publicacao em uma
+`SourceRun`. Ele aponta para `SearchQuery`, `SourceRun`, `Posting` e `Job`
+quando disponiveis, e guarda posicao, pagina e metadados sanitizados sem
+descricao integral.
 
 `PostingRevision` registra mudancas observadas em uma publicacao conhecida:
 
@@ -79,8 +101,9 @@ O HTML integral de respostas externas nao e duplicado em revisoes.
 `Job` guarda a vaga canonica com tipo, modalidade, localidade, remuneracao,
 status e campos minimos para futura compatibilidade academica.
 
-`Decision` guarda a ultima avaliacao de elegibilidade, motivo, nota e
-detalhamento.
+`Decision` guarda a ultima avaliacao de elegibilidade, motivo, nota,
+detalhamento e relevancia profissional (`relevance_status`, `relevance_score`,
+`relevance_reason_json`, `relevance_rules_version`).
 
 `Application` e `ApplicationEvent` registram candidatura e evolucao do processo,
 sem envio automatico nesta etapa.
@@ -95,10 +118,10 @@ com Gmail nesta etapa.
 
 ## Chaves e Indices
 
-Publicacoes evitam duplicidade por fonte e identificador externo, fonte e URL
-normalizada, e hash de conteudo. Consultas frequentes usam indices por status,
-atividade, ausencias, escopo de coleta, tipo, modalidade, cidade, empresa e
-nota.
+Publicacoes evitam duplicidade por identidade de plataforma quando presente,
+fonte e identificador externo, fonte e URL normalizada, e hash de conteudo.
+Consultas frequentes usam indices por status, atividade, ausencias, escopo de
+coleta, tipo, modalidade, cidade, empresa e nota.
 
 `CompanyBoard.key` e unico quando presente. Boards antigos sem key podem ser
 migrados e atualizados posteriormente.

@@ -1,0 +1,1 @@
+"""Gupy public portal collector."""

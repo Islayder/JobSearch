@@ -43,7 +43,13 @@ class GreenhouseCollector:
         if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
             raise CollectorError("Resposta Greenhouse nao contem lista jobs.")
         raw_jobs = payload["jobs"]
-        max_items = context.max_items or context.collection_config.default_max_items
+        max_items = (
+            context.max_items
+            if context.max_items is not None
+            else context.collection_config.default_max_items
+        )
+        if max_items <= 0:
+            raise CollectorError("max_items deve ser um inteiro positivo.")
         considered_jobs = raw_jobs[:max_items]
         items = []
         invalid_items = []

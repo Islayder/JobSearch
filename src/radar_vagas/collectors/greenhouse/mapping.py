@@ -37,6 +37,10 @@ def map_greenhouse_job(
     return ImportedPosting(
         source_name=source_name,
         source_type="greenhouse",
+        provider="greenhouse",
+        provider_scope=board_token,
+        provider_external_id=as_text(job.get("id")),
+        provider_identity_key=f"greenhouse:{board_token}:{as_text(job.get('id'))}",
         external_id=as_text(job.get("id")),
         url=public_url,
         title=title,

@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from radar_vagas.collection.contracts import Collector, CollectorMetadata
 from radar_vagas.collectors.greenhouse.collector import GreenhouseCollector
+from radar_vagas.collectors.gupy.collector import GupyCollector
 from radar_vagas.collectors.jobposting.collector import JobPostingCollector
 from radar_vagas.collectors.lever.collector import LeverCollector
 
@@ -50,12 +51,26 @@ COLLECTOR_METADATA: dict[str, CollectorMetadata] = {
         expected_fields=("board_token", "company_name"),
         capabilities=("complete_snapshot", "cache_headers"),
     ),
+    "gupy": CollectorMetadata(
+        slug="gupy",
+        name="Gupy Public Portal",
+        version="0.4",
+        collector_type="discovery_query",
+        supports_complete_snapshot=False,
+        requires_board_token=False,
+        accepts_single_url=False,
+        authentication="publica",
+        status="ativo",
+        expected_fields=("search_text", "mode"),
+        capabilities=("public_portal", "discovery_query", "no_post", "no_auth"),
+    ),
 }
 
 _FACTORIES: dict[str, CollectorFactory] = {
     "jobposting": JobPostingCollector,
     "greenhouse": GreenhouseCollector,
     "lever": LeverCollector,
+    "gupy": GupyCollector,
 }
 
 

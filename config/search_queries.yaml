@@ -1,0 +1,241 @@
+queries:
+  - key: gupy-estagio-dados
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 10
+    tags: [internship, data]
+    search_text: estágio dados
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-analise-dados
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 11
+    tags: [internship, data]
+    search_text: estágio análise de dados
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-business-intelligence
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 12
+    tags: [internship, bi]
+    search_text: estágio business intelligence
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-analytics
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 13
+    tags: [internship, data]
+    search_text: estágio analytics
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-tecnologia
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 20
+    tags: [internship, tech]
+    search_text: estágio tecnologia
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-software
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 21
+    tags: [internship, software]
+    search_text: estágio software
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-engenharia-dados
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 22
+    tags: [internship, data-engineering]
+    search_text: estágio engenharia de dados
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-credito
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 30
+    tags: [internship, adjacent]
+    search_text: estágio crédito
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-risco
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 31
+    tags: [internship, adjacent]
+    search_text: estágio risco
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-planejamento
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 32
+    tags: [internship, adjacent]
+    search_text: estágio planejamento
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-crm
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 33
+    tags: [internship, adjacent]
+    search_text: estágio CRM
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-estagio-operacoes
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 34
+    tags: [internship, adjacent]
+    search_text: estágio operações
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-trainee-dados
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 40
+    tags: [trainee, data]
+    search_text: trainee dados
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-trainee-tecnologia
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 41
+    tags: [trainee, tech]
+    search_text: trainee tecnologia
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-trainee-analytics
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 42
+    tags: [trainee, data]
+    search_text: trainee analytics
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-analista-dados-junior
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 50
+    tags: [junior, data]
+    search_text: analista de dados júnior
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-business-intelligence-junior
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 51
+    tags: [junior, bi]
+    search_text: business intelligence júnior
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-engenharia-dados-junior
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 52
+    tags: [junior, data-engineering]
+    search_text: engenharia de dados júnior
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-desenvolvedor-junior
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 53
+    tags: [junior, software]
+    search_text: desenvolvedor júnior
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false
+  - key: gupy-software-junior
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 54
+    tags: [junior, software]
+    search_text: software júnior
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false

@@ -86,3 +86,16 @@ class DuplicateKind(ReadableEnum):
     EXACT = "EXACT"
     PROBABLE = "PROBABLE"
     DISTINCT = "DISTINCT"
+
+
+class CollectionAuthority(ReadableEnum):
+    AUTHORITATIVE_BOARD = "AUTHORITATIVE_BOARD"
+    DISCOVERY_QUERY = "DISCOVERY_QUERY"
+    SINGLE_PAGE = "SINGLE_PAGE"
+
+
+class RelevanceStatus(ReadableEnum):
+    CORE = "CORE"
+    ADJACENT = "ADJACENT"
+    UNRELATED = "UNRELATED"
+    MANUAL_REVIEW = "MANUAL_REVIEW"

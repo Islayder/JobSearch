@@ -1,0 +1,33 @@
+{
+  "data": [
+    {
+      "id": 1001,
+      "companyId": 10,
+      "name": "Estagio em Dados",
+      "description": "<p>Atuar com dados.</p>",
+      "careerPageName": "Empresa Dados",
+      "type": "vacancy_type_internship",
+      "country": "Brasil",
+      "jobUrl": "https://empresadados.gupy.io/jobs/1001",
+      "workplaceType": "remote",
+      "skills": []
+    },
+    {
+      "id": "",
+      "name": "",
+      "jobUrl": "https://empresadados.gupy.io/jobs/sem-id",
+      "country": "Brasil"
+    },
+    {
+      "id": 1004,
+      "name": "Estagio Fake",
+      "jobUrl": "https://gupy.io.example.com/jobs/1004",
+      "country": "Brasil"
+    }
+  ],
+  "pagination": {
+    "total": 3,
+    "limit": 3,
+    "offset": 0
+  }
+}

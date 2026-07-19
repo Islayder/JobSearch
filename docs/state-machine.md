@@ -19,6 +19,11 @@ completos bem-sucedidos. Falhas, snapshots parciais, payload truncado, itens
 invalidos e HTTP 304 nao fecham publicacoes. Ausencia incrementa
 `missing_count`, mas nao atualiza `last_seen_at`.
 
+Consultas de descoberta (`DISCOVERY_QUERY`) e paginas individuais
+(`SINGLE_PAGE`) nao fecham publicacoes. Mesmo uma consulta vazia, truncada,
+parcial ou repetida apenas registra a execucao e nao interpreta ausencia como
+encerramento.
+
 ## Vaga
 
 ```mermaid
@@ -51,6 +56,11 @@ fica parada em `NEW`: pode voltar como `ELIGIBLE`, `RECOMMENDED`,
 `DISMISSED`, `APPLIED` e vagas com candidatura existente nao voltam ao ranking
 automaticamente por causa de uma mudanca ou reaparecimento de publicacao.
 Quando houver candidatura previa, a vaga passa a ser acompanhada como historico.
+
+Relevancia profissional afeta a transicao inicial: `UNRELATED` leva a
+`ARCHIVED`, `MANUAL_REVIEW` leva a `PENDING_REVIEW`, `CORE` e `ADJACENT`
+seguem elegibilidade e ranking. Incompatibilidades de empresa, localidade, tipo
+e candidatura anterior prevalecem.
 
 ## Candidatura
 

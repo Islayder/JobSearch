@@ -1,0 +1,15 @@
+queries:
+  - key: gupy-estagio-dados
+    collector: gupy
+    mode: public_portal
+    enabled: true
+    priority: 10
+    tags:
+      - internship
+      - data
+    search_text: estágio dados
+    filters:
+      country: Brasil
+    max_pages: 10
+    max_items: 200
+    hydrate_details: false

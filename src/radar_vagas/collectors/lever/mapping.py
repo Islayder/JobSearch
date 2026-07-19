@@ -35,10 +35,15 @@ def map_lever_posting(
     location_info["work_model"] = work_model.value
 
     public_url = as_text(posting.get("hostedUrl")) or as_text(posting.get("applyUrl"))
+    external_id = as_text(posting.get("id"))
     return ImportedPosting(
         source_name=source_name,
         source_type="lever",
-        external_id=as_text(posting.get("id")),
+        provider="lever",
+        provider_scope=board_token,
+        provider_external_id=external_id,
+        provider_identity_key=f"lever:{board_token}:{external_id}",
+        external_id=external_id,
         url=public_url,
         title=title,
         company=company_name,

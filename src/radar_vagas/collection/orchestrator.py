@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -19,13 +19,15 @@ from radar_vagas.canonicalization.normalize import (
 from radar_vagas.collection.contracts import CollectionContext, CollectionResult
 from radar_vagas.collection.result import CollectionExecutionReport, CollectionSummary
 from radar_vagas.collectors.common import short_metadata_change
-from radar_vagas.config.schemas import BoardConfig
+from radar_vagas.config.schemas import BoardConfig, SearchQueryConfig
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
+    CollectionAuthority,
     DuplicateKind,
     EligibilityStatus,
     JobStatus,
     PostingStatus,
+    RelevanceStatus,
     SourceRunStatus,
 )
 from radar_vagas.domain.time import utc_now
@@ -44,9 +46,11 @@ from radar_vagas.persistence.models import (
     Application,
     Company,
     CompanyBoard,
+    DiscoveryHit,
     Job,
     Posting,
     PostingRevision,
+    SearchQuery,
     Source,
     SourceRun,
 )
@@ -63,6 +67,11 @@ def build_collection_context(
     max_items: int | None = None,
     since: datetime | None = None,
     base_context: CollectionContext | None = None,
+    authority: CollectionAuthority | None = None,
+    query_key: str | None = None,
+    query_mode: str | None = None,
+    query_parameters: dict[str, Any] | None = None,
+    max_pages: int | None = None,
 ) -> CollectionContext:
     source_name = _source_name(
         collector,
@@ -76,6 +85,7 @@ def build_collection_context(
         board_token=board_token,
         url=url,
     )
+    resolved_authority = authority or _default_authority_for_collector(collector)
     if base_context is not None:
         return replace(
             base_context,
@@ -87,8 +97,13 @@ def build_collection_context(
             board_token=board_token,
             url=url,
             collection_scope_key=collection_scope_key,
+            authority=resolved_authority,
+            query_key=query_key,
+            query_mode=query_mode,
+            query_parameters=query_parameters or {},
             dry_run=dry_run,
             max_items=max_items,
+            max_pages=max_pages,
             since=since,
         )
     return CollectionContext(
@@ -100,8 +115,13 @@ def build_collection_context(
         board_token=board_token,
         url=url,
         collection_scope_key=collection_scope_key,
+        authority=resolved_authority,
+        query_key=query_key,
+        query_mode=query_mode,
+        query_parameters=query_parameters or {},
         dry_run=dry_run,
         max_items=max_items,
+        max_pages=max_pages,
         since=since,
     )
 
@@ -125,6 +145,7 @@ def run_collection_persistence(
     result: CollectionResult,
     *,
     board_config: BoardConfig | None = None,
+    search_query_config: SearchQueryConfig | None = None,
 ) -> CollectionExecutionReport:
     started_at = utc_now()
     if context.dry_run:
@@ -145,7 +166,10 @@ def run_collection_persistence(
     session.flush()
 
     board = _upsert_board(session, settings, context, source, board_config)
+    search_query, query_warning = _upsert_search_query(session, context, search_query_config)
     summary = _persist_result_items(session, settings, context, result, source, run)
+    if search_query is not None:
+        _record_discovery_hits(session, search_query, run, context, result, source)
     run.items_created = summary.new
     run.items_skipped = summary.unchanged + summary.exact_duplicates + summary.invalid_items
     run.status = SourceRunStatus.SUCCESS
@@ -153,8 +177,12 @@ def run_collection_persistence(
 
     if board is not None:
         _mark_board_success(board, run, result)
+    if search_query is not None:
+        _mark_search_query_success(search_query, run, result)
 
     report = _execution_report(context, result, started_at, run.finished_at, summary)
+    if query_warning is not None:
+        report = replace(report, warnings=[*report.warnings, query_warning])
     session.flush()
     return report
 
@@ -165,6 +193,7 @@ def record_failed_collection(
     error: Exception,
     *,
     board_config: BoardConfig | None = None,
+    search_query_config: SearchQueryConfig | None = None,
     settings: Settings | None = None,
 ) -> None:
     if context.dry_run:
@@ -187,6 +216,9 @@ def record_failed_collection(
         board = _upsert_board(session, settings, context, source, board_config)
         if board is not None:
             _mark_board_failure(board, run)
+    search_query, _query_warning = _upsert_search_query(session, context, search_query_config)
+    if search_query is not None:
+        _mark_search_query_failure(search_query, run)
 
 
 def board_url_for(context: CollectionContext) -> str | None:
@@ -241,6 +273,7 @@ def _persist_result_items(
         existing = _find_existing_posting(session, source, analysis)
         if existing is not None:
             seen_posting_ids.add(existing.id)
+            posting_scope_key = _scope_key_for_existing(context, existing, collection_scope_key)
             if existing.content_hash == analysis.content_hash:
                 if not existing.is_active:
                     counters["reopened"] += 1
@@ -249,7 +282,7 @@ def _persist_result_items(
                     settings,
                     existing,
                     run,
-                    collection_scope_key=collection_scope_key,
+                    collection_scope_key=posting_scope_key,
                 )
                 counters["unchanged"] += 1
                 continue
@@ -262,7 +295,7 @@ def _persist_result_items(
                 existing,
                 analysis,
                 run,
-                collection_scope_key=collection_scope_key,
+                collection_scope_key=posting_scope_key,
             )
             counters["changed"] += 1
             continue
@@ -284,7 +317,7 @@ def _persist_result_items(
         if duplicate_kind is DuplicateKind.PROBABLE:
             counters["probable_duplicates"] += 1
 
-    if result.complete_snapshot and not result.partial:
+    if _can_increment_absences(context, result):
         counters["closed"] += _increment_absences(
             session,
             collection_scope_key=collection_scope_key,
@@ -327,6 +360,16 @@ def _increment_absences(
     return closed
 
 
+def _scope_key_for_existing(
+    context: CollectionContext,
+    posting: Posting,
+    collection_scope_key: str,
+) -> str:
+    if context.authority is CollectionAuthority.DISCOVERY_QUERY and posting.collection_scope_key:
+        return posting.collection_scope_key
+    return collection_scope_key
+
+
 def _close_job_if_no_active_posting(session: Session, job: Job | None) -> None:
     if job is None:
         return
@@ -351,6 +394,12 @@ def _find_existing_posting(
     analysis: ItemAnalysis,
 ) -> Posting | None:
     posting = analysis.posting
+    if posting.provider_identity_key:
+        existing = session.scalar(
+            select(Posting).where(Posting.provider_identity_key == posting.provider_identity_key)
+        )
+        if existing is not None:
+            return existing
     if posting.external_id:
         existing = session.scalar(
             select(Posting).where(
@@ -425,6 +474,10 @@ def _update_existing_posting(
     item = analysis.posting
     posting.source_run_id = run.id
     posting.collection_scope_key = collection_scope_key
+    posting.provider = item.provider or posting.provider
+    posting.provider_scope = item.provider_scope or posting.provider_scope
+    posting.provider_external_id = item.provider_external_id or posting.provider_external_id
+    posting.provider_identity_key = item.provider_identity_key or posting.provider_identity_key
     posting.external_id = item.external_id
     posting.original_url = item.url or item.application_url or posting.original_url
     posting.normalized_url = analysis.normalized_url
@@ -541,6 +594,9 @@ def _base_counters(result: CollectionResult, analyses: list[ItemAnalysis]) -> di
         "eligible": 0,
         "manual_review": 0,
         "ineligible": 0,
+        "core": 0,
+        "adjacent": 0,
+        "unrelated": 0,
         "closed": 0,
         "reopened": 0,
         "invalid_items": len(result.invalid_items),
@@ -552,6 +608,12 @@ def _base_counters(result: CollectionResult, analyses: list[ItemAnalysis]) -> di
             counters["manual_review"] += 1
         elif analysis.eligibility_status is EligibilityStatus.INELIGIBLE:
             counters["ineligible"] += 1
+        if analysis.relevance_status is RelevanceStatus.CORE:
+            counters["core"] += 1
+        elif analysis.relevance_status is RelevanceStatus.ADJACENT:
+            counters["adjacent"] += 1
+        elif analysis.relevance_status is RelevanceStatus.UNRELATED:
+            counters["unrelated"] += 1
     return counters
 
 
@@ -566,6 +628,9 @@ def _summary_from_counters(counters: dict[str, int]) -> CollectionSummary:
         eligible=counters["eligible"],
         manual_review=counters["manual_review"],
         ineligible=counters["ineligible"],
+        core=counters["core"],
+        adjacent=counters["adjacent"],
+        unrelated=counters["unrelated"],
         closed=counters["closed"],
         reopened=counters["reopened"],
         invalid_items=counters["invalid_items"],
@@ -596,6 +661,7 @@ def _execution_report(
         errors=result.recoverable_errors,
         metadata={
             **result.metadata,
+            "authority": context.authority.value.lower(),
             "collection_scope_key": _collection_scope_key(context),
             "complete_snapshot": result.complete_snapshot,
             "partial": result.partial,
@@ -678,6 +744,194 @@ def _upsert_board(
     board.is_active = board_config.enabled
     board.disabled_reason = None if board_config.enabled else "Desativado na configuracao YAML."
     return board
+
+
+def _upsert_search_query(
+    session: Session,
+    context: CollectionContext,
+    query_config: SearchQueryConfig | None,
+) -> tuple[SearchQuery | None, str | None]:
+    if query_config is None:
+        return None, None
+    query = session.scalar(select(SearchQuery).where(SearchQuery.key == query_config.key))
+    configuration_json = json.dumps(
+        query_config.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
+    )
+    warning: str | None = None
+    if query is None:
+        query = SearchQuery(
+            key=query_config.key,
+            collector_type=query_config.collector,
+            mode=query_config.mode,
+            configuration_json=configuration_json,
+            configuration_fingerprint=query_config.configuration_fingerprint,
+            collection_scope_key=query_config.collection_scope_key,
+            is_active=query_config.enabled,
+            priority=query_config.priority,
+            tags_json=json.dumps(query_config.tags, ensure_ascii=False, sort_keys=True),
+            consecutive_failures=0,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        session.add(query)
+    elif query.configuration_fingerprint != query_config.configuration_fingerprint:
+        warning = (
+            "Fingerprint da consulta mudou desde a ultima persistencia; "
+            "ausencias antigas nao serao usadas para fechamento."
+        )
+
+    query.collector_type = query_config.collector
+    query.mode = query_config.mode
+    query.configuration_json = configuration_json
+    query.configuration_fingerprint = query_config.configuration_fingerprint
+    query.collection_scope_key = query_config.collection_scope_key
+    query.is_active = query_config.enabled
+    query.priority = query_config.priority
+    query.tags_json = json.dumps(query_config.tags, ensure_ascii=False, sort_keys=True)
+    query.disabled_reason = None if query_config.enabled else "Desativada na configuracao YAML."
+    query.updated_at = utc_now()
+    session.flush()
+    return query, warning
+
+
+def _record_discovery_hits(
+    session: Session,
+    search_query: SearchQuery,
+    run: SourceRun,
+    context: CollectionContext,
+    result: CollectionResult,
+    source: Source,
+) -> None:
+    seen_keys: set[str] = set()
+    for index, item in enumerate(result.items, start=1):
+        provider_key = item.provider_identity_key
+        dedupe_key = provider_key or f"item-{index}"
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
+        posting = _find_posting_for_hit(session, source, item)
+        metadata = _discovery_hit_metadata(context, item)
+        session.add(
+            DiscoveryHit(
+                search_query_id=search_query.id,
+                source_run_id=run.id,
+                posting_id=posting.id if posting is not None else None,
+                job_id=posting.job_id if posting is not None else None,
+                provider_identity_key=provider_key,
+                position_in_results=_metadata_int(item.metadata.get("position_in_results")),
+                page_number=_metadata_int(item.metadata.get("page_number")),
+                observed_at=utc_now(),
+                match_status=_hit_match_status(posting, run),
+                metadata_json=json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+            )
+        )
+
+
+def _find_posting_for_hit(
+    session: Session,
+    source: Source,
+    item: ImportedPosting,
+) -> Posting | None:
+    if item.provider_identity_key:
+        posting = session.scalar(
+            select(Posting).where(Posting.provider_identity_key == item.provider_identity_key)
+        )
+        if posting is not None:
+            return posting
+    if item.external_id:
+        posting = session.scalar(
+            select(Posting).where(
+                Posting.source_id == source.id,
+                Posting.external_id == item.external_id,
+            )
+        )
+        if posting is not None:
+            return posting
+    normalized_url = normalize_url(item.url or item.application_url or "")
+    if normalized_url:
+        return session.scalar(
+            select(Posting).where(
+                Posting.source_id == source.id,
+                Posting.normalized_url == normalized_url,
+            )
+        )
+    return None
+
+
+def _discovery_hit_metadata(
+    context: CollectionContext,
+    item: ImportedPosting,
+) -> dict[str, object]:
+    return {
+        "query_key": context.query_key,
+        "collector": context.collector,
+        "mode": context.query_mode,
+        "title": item.title,
+        "company": item.company,
+        "public_url": item.url or item.application_url,
+        "page_number": _metadata_int(item.metadata.get("page_number")),
+        "position_in_results": _metadata_int(item.metadata.get("position_in_results")),
+    }
+
+
+def _metadata_int(value: object) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _hit_match_status(posting: Posting | None, run: SourceRun) -> str:
+    if posting is None:
+        return "unmatched"
+    if _aware_datetime(posting.first_seen_at) >= _aware_datetime(run.started_at):
+        return "new"
+    if posting.source_run_id == run.id and posting.revisions:
+        latest_revision = max(posting.revisions, key=lambda revision: revision.observed_at)
+        if latest_revision.source_run_id == run.id:
+            return "changed"
+    return "known"
+
+
+def _aware_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+def _mark_search_query_success(
+    search_query: SearchQuery,
+    run: SourceRun,
+    result: CollectionResult,
+) -> None:
+    now = utc_now()
+    search_query.last_checked_at = now
+    search_query.last_success_at = now
+    search_query.last_failed_at = None
+    search_query.consecutive_failures = 0
+    search_query.last_run_id = run.id
+    if not result.partial and not bool(result.metadata.get("truncated")):
+        search_query.last_complete_page_at = now
+    search_query.updated_at = now
+
+
+def _mark_search_query_failure(search_query: SearchQuery, run: SourceRun) -> None:
+    now = utc_now()
+    search_query.last_checked_at = now
+    search_query.last_failed_at = now
+    search_query.consecutive_failures += 1
+    search_query.last_run_id = run.id
+    search_query.updated_at = now
 
 
 def _migrate_exclusive_legacy_board_postings(
@@ -774,12 +1028,32 @@ def collection_scope_key_for(
     return _bounded_slug(raw_key)
 
 
+def _default_authority_for_collector(collector: str) -> CollectionAuthority:
+    normalized = collector.strip().lower()
+    if normalized in {"greenhouse", "lever"}:
+        return CollectionAuthority.AUTHORITATIVE_BOARD
+    if normalized == "gupy":
+        return CollectionAuthority.DISCOVERY_QUERY
+    return CollectionAuthority.SINGLE_PAGE
+
+
 def _collection_scope_key(context: CollectionContext) -> str:
     return context.collection_scope_key or collection_scope_key_for(
         collector=context.collector,
         board_key=context.board_key,
         board_token=context.board_token,
         url=context.url,
+    )
+
+
+def _can_increment_absences(context: CollectionContext, result: CollectionResult) -> bool:
+    return (
+        context.authority is CollectionAuthority.AUTHORITATIVE_BOARD
+        and result.complete_snapshot
+        and not result.partial
+        and not result.not_modified
+        and not result.invalid_items
+        and not bool(result.metadata.get("truncated"))
     )
 
 

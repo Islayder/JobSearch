@@ -15,6 +15,10 @@ class ImportedPosting(BaseModel):
 
     source_name: str
     source_type: str | None = "file_import"
+    provider: str | None = None
+    provider_scope: str | None = None
+    provider_external_id: str | None = None
+    provider_identity_key: str | None = None
     external_id: str | None = None
     url: str | None = None
     title: str
@@ -48,6 +52,10 @@ class ImportedPosting(BaseModel):
 
     @field_validator(
         "external_id",
+        "provider",
+        "provider_scope",
+        "provider_external_id",
+        "provider_identity_key",
         "url",
         "source_type",
         "location",

@@ -10,6 +10,10 @@ work_model:
   remote_brazil: 30
   hybrid_belo_horizonte: 20
   onsite_belo_horizonte: 10
+relevance:
+  core: 15
+  adjacent: 7
+  manual_review: 0
 additional:
   salary_disclosed: 5
   benefit_keyword_max: 5

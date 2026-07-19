@@ -42,7 +42,13 @@ class LeverCollector:
             raise CollectorError("Lever retornou JSON invalido.") from exc
         if not isinstance(payload, list):
             raise CollectorError("Resposta Lever nao contem lista de postings.")
-        max_items = context.max_items or context.collection_config.default_max_items
+        max_items = (
+            context.max_items
+            if context.max_items is not None
+            else context.collection_config.default_max_items
+        )
+        if max_items <= 0:
+            raise CollectorError("max_items deve ser um inteiro positivo.")
         considered_items = payload[:max_items]
         items = []
         invalid_items = []

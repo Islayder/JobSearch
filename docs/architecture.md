@@ -8,11 +8,12 @@ SQLite como banco e separa camadas por responsabilidade:
 - CLI: entrada e apresentacao no terminal.
 - Configuracao: leitura e validacao de YAML e variaveis de ambiente.
 - HTTP: cliente central com GET/HEAD, timeouts, retry, redirects, cache e SSRF.
-- Coletores: JobPosting JSON-LD, Greenhouse e Lever.
+- Coletores: JobPosting JSON-LD, Greenhouse, Lever e Gupy Public Portal.
 - Ingestao: importacao de fixture, arquivos JSON/CSV e DTOs coletados.
 - Canonicalizacao: normalizacao de textos, URLs, empresas e localidades.
 - Deduplicacao: deteccao exata de publicacoes e candidatos provaveis.
 - Elegibilidade: regras puras e testaveis.
+- Relevancia: classificacao deterministica de area profissional.
 - Ranking: pontuacao deterministica e explicavel.
 - Persistencia: SQLAlchemy, sessoes, modelos e migracoes Alembic.
 
@@ -45,12 +46,24 @@ FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
 4. `radar import-url` coleta uma unica pagina publica com JSON-LD `JobPosting`.
 5. `radar collect-board` coleta um board publico Greenhouse ou Lever.
 6. `radar collect-all` coleta os boards ativos configurados.
-7. O orquestrador registra `SourceRun`, isola a coleta por escopo estavel de
+7. `radar collect-query` e `radar collect-search-plan` executam consultas de
+   descoberta, como buscas publicas Gupy.
+8. O orquestrador registra `SourceRun`, isola a coleta por escopo estavel de
    board, atualiza publicacoes conhecidas, cria revisoes quando conteudo muda e
-   fecha publicacoes ausentes somente apos o limite configurado de snapshots
-   completos.
-8. `radar evaluate-all`, `radar list-jobs`, `radar show-job`, `radar stats`,
+   fecha publicacoes ausentes somente quando a autoridade da coleta permite.
+9. `radar evaluate-all`, `radar list-jobs`, `radar show-job`, `radar stats`,
    `radar boards` e `radar source-health` consultam ou atualizam o banco.
+
+## Autoridade da Coleta
+
+Toda coleta tem autoridade explicita:
+
+- `AUTHORITATIVE_BOARD`: boards completos podem incrementar ausencias quando a
+  execucao e bem-sucedida, completa, nao parcial, nao truncada e sem itens
+  invalidos que comprometam completude.
+- `DISCOVERY_QUERY`: buscas globais ou filtradas apenas observam resultados.
+  Nunca fecham publicacoes ou vagas canonicas por ausencia.
+- `SINGLE_PAGE`: paginas individuais nao fecham outras publicacoes.
 
 ## Rollback
 
@@ -64,7 +77,7 @@ fecha publicacoes. Snapshots parciais por truncamento, itens invalidos ou HTTP
 
 - Busca global por empresas.
 - Crawling recursivo ou busca no Google.
-- LinkedIn, Indeed, Glassdoor, Gupy, Solides e Pandape.
+- LinkedIn, Indeed, Glassdoor, Solides e Pandape.
 - Gmail e classificacao de e-mails.
 - Geracao de curriculo.
 - Interpretacao semantica ampla ou IA.

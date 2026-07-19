@@ -12,9 +12,10 @@ duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 - paginas publicas com JSON-LD `JobPosting`;
 - boards publicos Greenhouse;
 - boards publicos Lever.
+- consultas publicas Gupy em modo `public_portal`.
 
-Nao ha busca global, crawling recursivo, Gmail, IA, geracao de curriculo,
-preenchimento de formularios ou candidatura automatica.
+Nao ha crawling recursivo, Gmail, IA, geracao de curriculo, preenchimento de
+formularios ou candidatura automatica.
 
 ## Usuario
 
@@ -54,6 +55,14 @@ Qualquer vaga junior presencial e incompativel, inclusive em Belo Horizonte.
 Bolsa de inovacao fica em revisao manual. Outros vinculos e vinculos
 desconhecidos tambem ficam em revisao manual, salvo quando uma regra obrigatoria
 determina rejeicao.
+
+## Relevancia Profissional
+
+Apos regras duras de empresa, candidatura, localidade e tipo, o sistema avalia
+area profissional por regras deterministicas. `CORE` segue elegibilidade normal
+e recebe bonus de ranking. `ADJACENT` pode ser elegivel com bonus menor.
+`MANUAL_REVIEW` envia a vaga para revisao quando nao houver outro motivo
+eliminatorio. `UNRELATED` torna a vaga incompativel com motivo explicito.
 
 ## Historico e Empresas Bloqueadas
 

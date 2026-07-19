@@ -1,4 +1,11 @@
+import json
+import re
+from hashlib import sha256
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from radar_vagas.canonicalization.normalize import normalize_text
 
 
 class EligibilityRulesConfig(BaseModel):
@@ -49,6 +56,13 @@ class RankingWeightsConfig(BaseModel):
             "remote_brazil": 30,
             "hybrid_belo_horizonte": 20,
             "onsite_belo_horizonte": 10,
+        }
+    )
+    relevance: dict[str, int] = Field(
+        default_factory=lambda: {
+            "core": 15,
+            "adjacent": 7,
+            "manual_review": 0,
         }
     )
     additional: RankingAdditionalWeights = Field(default_factory=RankingAdditionalWeights)
@@ -230,3 +244,242 @@ class CompanyBoardsConfig(BaseModel):
 
     def enabled_boards(self) -> list[BoardConfig]:
         return [board for board in self.boards if board.enabled]
+
+
+class SearchQueryConfig(BaseModel):
+    key: str
+    collector: str
+    mode: str
+    enabled: bool = True
+    priority: int = 100
+    tags: list[str] = Field(default_factory=list)
+    search_text: str
+    filters: dict[str, Any] = Field(default_factory=dict)
+    max_pages: int = Field(default=10, ge=1)
+    max_items: int = Field(default=200, ge=1)
+    hydrate_details: bool = False
+
+    @field_validator("key", "collector", "mode", "search_text")
+    @classmethod
+    def require_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("campo obrigatorio vazio")
+        return stripped
+
+    @field_validator("collector")
+    @classmethod
+    def normalize_collector(cls, value: str) -> str:
+        collector = value.strip().lower()
+        if collector != "gupy":
+            raise ValueError(f"coletor desconhecido para consulta: {value}")
+        return collector
+
+    @field_validator("mode")
+    @classmethod
+    def normalize_mode(cls, value: str) -> str:
+        mode = value.strip().lower()
+        if mode != "public_portal":
+            raise ValueError(f"modo de consulta desconhecido: {value}")
+        return mode
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, value: list[str]) -> list[str]:
+        tags: list[str] = []
+        for tag in value:
+            normalized = tag.strip().lower()
+            if normalized:
+                tags.append(normalized)
+        return sorted(set(tags))
+
+    @model_validator(mode="after")
+    def validate_filters_and_secrets(self) -> "SearchQueryConfig":
+        unsupported = sorted(set(self.filters) - {"country"})
+        if unsupported:
+            joined = ", ".join(unsupported)
+            raise ValueError(f"filtros nao suportados para consulta Gupy: {joined}")
+        _raise_if_contains_secret(self.model_dump(mode="json"))
+        return self
+
+    @property
+    def collection_scope_key(self) -> str:
+        return _bounded_slug(f"search-query-{self.key}")
+
+    @property
+    def configuration_fingerprint(self) -> str:
+        payload = {
+            "collector": self.collector,
+            "mode": self.mode,
+            "search_text": self.search_text,
+            "filters": self.filters,
+            "max_pages": self.max_pages,
+            "max_items": self.max_items,
+            "hydrate_details": self.hydrate_details,
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+class SearchQueriesConfig(BaseModel):
+    queries: list[SearchQueryConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_keys(self) -> "SearchQueriesConfig":
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for query in self.queries:
+            if query.key in seen:
+                duplicates.add(query.key)
+            seen.add(query.key)
+        if duplicates:
+            joined = ", ".join(sorted(duplicates))
+            raise ValueError(f"keys duplicadas em search_queries: {joined}")
+        return self
+
+    def enabled_queries(self) -> list[SearchQueryConfig]:
+        return [query for query in self.queries if query.enabled]
+
+
+class RelevanceWeightsConfig(BaseModel):
+    title: int = 5
+    department: int = 3
+    description: int = 1
+    technology: int = 2
+    negative: int = 6
+
+
+class RelevanceThresholdsConfig(BaseModel):
+    core: int = 5
+    adjacent: int = 4
+    manual_review: int = 2
+    strong_negative: int = 6
+
+
+class RelevanceRulesConfig(BaseModel):
+    version: str = "2026-07-19"
+    core_terms: list[str] = Field(
+        default_factory=lambda: [
+            "analise de dados",
+            "dados",
+            "data analytics",
+            "analytics",
+            "business intelligence",
+            "bi",
+            "power bi",
+            "sql",
+            "python",
+            "engenharia de dados",
+            "data engineering",
+            "ciencia de dados",
+            "data science",
+            "inteligencia de negocios",
+            "inteligencia de mercado",
+            "software",
+            "desenvolvedor",
+            "desenvolvedora",
+            "desenvolvimento",
+            "tecnologia",
+            "automacao",
+            "qa",
+            "testes automatizados",
+            "produto de tecnologia",
+        ]
+    )
+    adjacent_terms: list[str] = Field(
+        default_factory=lambda: [
+            "credito",
+            "risco",
+            "riscos",
+            "fraude",
+            "pricing",
+            "planejamento",
+            "financas",
+            "crm",
+            "marketing analytics",
+            "performance",
+            "people analytics",
+            "operacoes orientadas a dados",
+            "operacoes",
+            "logistica analitica",
+            "auditoria com dados",
+            "processos",
+            "produto",
+            "indicadores",
+            "relatorios",
+            "automacao de processos",
+        ]
+    )
+    technology_terms: list[str] = Field(
+        default_factory=lambda: [
+            "sql",
+            "python",
+            "power bi",
+            "dashboard",
+            "etl",
+            "pipeline",
+            "api",
+            "apis",
+            "git",
+            "cloud",
+        ]
+    )
+    negative_terms: list[str] = Field(
+        default_factory=lambda: [
+            "digitacao de dados",
+            "cadastro de dados",
+            "operador de caixa",
+            "auxiliar administrativo",
+            "recepcao",
+            "vendas",
+            "atendimento ao cliente",
+            "telemarketing",
+            "estoque",
+            "logistica operacional",
+        ]
+    )
+    weights: RelevanceWeightsConfig = Field(default_factory=RelevanceWeightsConfig)
+    thresholds: RelevanceThresholdsConfig = Field(default_factory=RelevanceThresholdsConfig)
+    explanations: dict[str, str] = Field(
+        default_factory=lambda: {
+            "core": "Sinais principais de dados, tecnologia ou software encontrados.",
+            "adjacent": "Sinais adjacentes com uso potencial de analise, indicadores ou processos.",
+            "manual_review": "Ha poucos sinais profissionais claros; revisar manualmente.",
+            "unrelated": "Nao ha sinais suficientes da area alvo ou ha sinais negativos fortes.",
+        }
+    )
+
+    @field_validator(
+        "core_terms", "adjacent_terms", "technology_terms", "negative_terms", mode="before"
+    )
+    @classmethod
+    def require_term_list(cls, value: object) -> object:
+        if not isinstance(value, list):
+            raise ValueError("lista de termos esperada")
+        return value
+
+
+def _raise_if_contains_secret(value: Any, *, path: str = "config") -> None:
+    secret_words = {"token", "password", "secret", "cookie", "authorization", "bearer", "login"}
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized_key = str(key).lower()
+            if any(secret in normalized_key for secret in secret_words):
+                raise ValueError(f"credencial nao permitida em {path}.{key}")
+            _raise_if_contains_secret(nested, path=f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            _raise_if_contains_secret(nested, path=f"{path}[{index}]")
+    elif isinstance(value, str):
+        normalized_value = value.lower()
+        if any(marker in normalized_value for marker in ("bearer ", "authorization:", "cookie:")):
+            raise ValueError(f"credencial nao permitida em {path}")
+
+
+def _bounded_slug(value: str, *, max_length: int = 120) -> str:
+    normalized = normalize_text(value)
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-") or "search-query"
+    if len(slug) <= max_length:
+        return slug
+    digest = sha256(slug.encode("utf-8")).hexdigest()[:12]
+    return f"{slug[: max_length - 13].rstrip('-')}-{digest}"

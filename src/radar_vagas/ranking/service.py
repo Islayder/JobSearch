@@ -3,7 +3,13 @@ from datetime import UTC, datetime, timedelta
 
 from radar_vagas.canonicalization.normalize import is_belo_horizonte, normalize_text
 from radar_vagas.config.schemas import RankingWeightsConfig
-from radar_vagas.domain.enums import EligibilityStatus, EmploymentType, JobStatus, WorkModel
+from radar_vagas.domain.enums import (
+    EligibilityStatus,
+    EmploymentType,
+    JobStatus,
+    RelevanceStatus,
+    WorkModel,
+)
 
 
 @dataclass(frozen=True)
@@ -20,6 +26,7 @@ class RankingInput:
     hours_per_day: float | None
     hours_per_week: float | None
     status: JobStatus
+    relevance_status: RelevanceStatus | None = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +55,7 @@ def rank_job(
         "benefits": _benefit_points(job.description, weights),
         "freshness": _freshness_points(job.published_at, reference_now, weights),
         "hours_disclosed": _hours_points(job, weights),
+        "relevance": _relevance_points(job.relevance_status, weights),
     }
     return RankingResult(total=sum(breakdown.values()), breakdown=breakdown)
 
@@ -103,6 +111,19 @@ def _freshness_points(
 def _hours_points(job: RankingInput, weights: RankingWeightsConfig) -> int:
     if job.hours_per_day is not None or job.hours_per_week is not None:
         return weights.additional.hours_disclosed
+    return 0
+
+
+def _relevance_points(
+    relevance_status: RelevanceStatus | None,
+    weights: RankingWeightsConfig,
+) -> int:
+    if relevance_status is RelevanceStatus.CORE:
+        return weights.relevance.get("core", 0)
+    if relevance_status is RelevanceStatus.ADJACENT:
+        return weights.relevance.get("adjacent", 0)
+    if relevance_status is RelevanceStatus.MANUAL_REVIEW:
+        return weights.relevance.get("manual_review", 0)
     return 0
 
 

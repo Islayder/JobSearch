@@ -21,8 +21,9 @@ arquivos JSON/CSV.
 2. O cliente HTTP central valida URL, DNS, redirects, metodo, tipo de conteudo e
    tamanho de resposta.
 3. O coletor converte a resposta publica em `ImportedPosting`.
-4. O orquestrador cria `SourceRun`, detecta duplicatas, atualiza itens
-   conhecidos, cria revisoes e aplica fechamento incremental quando permitido.
+4. O orquestrador cria `SourceRun`, detecta duplicatas por identidade de
+   plataforma quando disponivel, atualiza itens conhecidos, cria revisoes e
+   aplica fechamento incremental somente quando a autoridade permite.
 5. O relatorio de coleta resume rede, encontrados, novos, conhecidos, alterados,
    duplicados, invalidos, elegibilidade e fechamentos.
 
@@ -38,6 +39,16 @@ quando itens invalidos precisaram ser ignorados. Nesses casos o relatorio traz
 `truncated`, e o orquestrador nao incrementa ausencias nem fecha publicacoes.
 
 HTTP 304 tambem nao incrementa ausencias, porque nada foi reprocessado.
+
+## Autoridade
+
+`CollectionContext.authority` controla fechamento incremental:
+
+- Greenhouse e Lever configurados como board usam `AUTHORITATIVE_BOARD`.
+- Gupy Public Portal usa `DISCOVERY_QUERY`.
+- JobPosting individual usa `SINGLE_PAGE`.
+
+O orquestrador exige essa politica; `complete_snapshot` sozinho nao basta.
 
 ## JobPosting
 
@@ -84,6 +95,21 @@ Campos mapeados: id, titulo, categories, commitment, equipe, departamento,
 localidade, modalidade, descricao combinada, hosted URL, apply URL e data de
 criacao. Itens sem titulo, identificador ou URL publica valida sao ignorados
 como erro recuperavel do item, sem criar titulo artificial.
+
+## Gupy
+
+`gupy` usa o modo `public_portal` e consulta apenas a interface publica validada
+do portal:
+
+```powershell
+radar collect-query gupy-estagio-dados --dry-run --max-pages 1 --max-items 5
+```
+
+O coletor chama somente `GET` em
+`https://employability-portal.gupy.io/api/v1/jobs` com `jobName`, `limit` e
+`offset`. Nao usa `https://api.gupy.io/api/v1/jobs`, Bearer token, login,
+cookies autenticados, POST, candidatura, CAPTCHA, proxy ou Playwright. A
+consulta e `DISCOVERY_QUERY` e nunca fecha vagas por ausencia.
 
 ## Adicionar Coletor Futuro
 

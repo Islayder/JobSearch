@@ -95,16 +95,18 @@ class HttpClient:
         url: str,
         *,
         headers: Mapping[str, str] | None = None,
+        allowed_hosts: tuple[str, ...] | None = None,
     ) -> HttpRequestResult:
-        return self.request("GET", url, headers=headers)
+        return self.request("GET", url, headers=headers, allowed_hosts=allowed_hosts)
 
     def head(
         self,
         url: str,
         *,
         headers: Mapping[str, str] | None = None,
+        allowed_hosts: tuple[str, ...] | None = None,
     ) -> HttpRequestResult:
-        return self.request("HEAD", url, headers=headers)
+        return self.request("HEAD", url, headers=headers, allowed_hosts=allowed_hosts)
 
     def request(
         self,
@@ -112,11 +114,13 @@ class HttpClient:
         url: str,
         *,
         headers: Mapping[str, str] | None = None,
+        allowed_hosts: tuple[str, ...] | None = None,
     ) -> HttpRequestResult:
         if method not in {"GET", "HEAD"}:
             raise HttpClientError("Somente GET e HEAD sao permitidos.")
 
         current_url = self.policy.validate_url(url)
+        _validate_allowed_host(current_url, allowed_hosts)
         redirects = 0
         requests_made = 0
         retries = 0
@@ -127,6 +131,7 @@ class HttpClient:
                 attempt += 1
                 try:
                     current_url = self.policy.validate_url(current_url)
+                    _validate_allowed_host(current_url, allowed_hosts)
                     requests_made += 1
                     response = self._send_once(method, current_url, headers=headers)
                 except httpx.TimeoutException as exc:
@@ -174,6 +179,7 @@ class HttpClient:
                 if not location:
                     raise HttpStatusError("Redirect sem header Location.")
                 current_url = self.policy.validate_url(urljoin(current_url, location))
+                _validate_allowed_host(current_url, allowed_hosts)
                 continue
 
             if response.status_code == 304:
@@ -288,6 +294,15 @@ def _validate_content_type(headers: Mapping[str, str]) -> None:
         return
     if media_type not in ALLOWED_CONTENT_TYPES:
         raise InvalidContentTypeError(f"Tipo de conteudo nao permitido: {content_type or '-'}")
+
+
+def _validate_allowed_host(url: str, allowed_hosts: tuple[str, ...] | None) -> None:
+    if allowed_hosts is None:
+        return
+    hostname = (urlsplit(url).hostname or "").strip(".").lower()
+    normalized_allowed = {host.strip(".").lower() for host in allowed_hosts}
+    if hostname not in normalized_allowed:
+        raise HttpClientError(f"Host fora da allowlist da coleta: {hostname}.")
 
 
 def _encoding_from_headers(headers: Mapping[str, str]) -> str:

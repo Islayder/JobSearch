@@ -18,7 +18,11 @@ from radar_vagas.canonicalization.normalize import (
     normalize_title,
     normalize_url,
 )
-from radar_vagas.config.loaders import blocked_company_reasons, load_eligibility_rules
+from radar_vagas.config.loaders import (
+    blocked_company_reasons,
+    load_eligibility_rules,
+    load_relevance_rules,
+)
 from radar_vagas.config.settings import Settings
 from radar_vagas.deduplication.service import DuplicateCandidate, classify_canonical_duplicate
 from radar_vagas.domain.enums import (
@@ -26,12 +30,13 @@ from radar_vagas.domain.enums import (
     EligibilityStatus,
     JobStatus,
     PostingStatus,
+    RelevanceStatus,
     SourceRunStatus,
 )
 from radar_vagas.domain.errors import RadarError
 from radar_vagas.domain.time import utc_now
 from radar_vagas.eligibility.service import EligibilityInput, evaluate_eligibility
-from radar_vagas.eligibility.workflow import evaluate_job_record
+from radar_vagas.eligibility.workflow import _apply_relevance_to_eligibility, evaluate_job_record
 from radar_vagas.ingestion.file_parser import ParsedImportFile, ParsedImportItem, parse_import_file
 from radar_vagas.ingestion.import_schema import ImportedPosting
 from radar_vagas.persistence.models import (
@@ -45,6 +50,7 @@ from radar_vagas.persistence.models import (
     Source,
     SourceRun,
 )
+from radar_vagas.relevance.service import RoleRelevanceInput, evaluate_role_relevance
 
 
 @dataclass(frozen=True)
@@ -94,6 +100,8 @@ class ItemAnalysis:
     duplicate_posting_id: int | None
     eligibility_status: EligibilityStatus
     reason_code: str
+    relevance_status: RelevanceStatus | None = None
+    relevance_score: int | None = None
 
 
 @dataclass
@@ -261,6 +269,7 @@ def _analyze_items(
 ) -> list[ItemAnalysis]:
     blocked_reasons = blocked_company_reasons(settings.config_dir)
     rules = load_eligibility_rules(settings.config_dir)
+    relevance_rules = load_relevance_rules(settings.config_dir)
     analyses: list[ItemAnalysis] = []
     seen_exact_keys: set[tuple[str, str]] = set()
 
@@ -298,6 +307,16 @@ def _analyze_items(
             rules,
             blocked_reasons,
         )
+        relevance = evaluate_role_relevance(
+            RoleRelevanceInput(
+                title=posting.title,
+                department=as_text_from_metadata(posting.metadata.get("department")),
+                description=posting.description_with_benefits(),
+                technologies=_technologies_from_metadata(posting.metadata),
+            ),
+            relevance_rules,
+        )
+        eligibility = _apply_relevance_to_eligibility(eligibility, relevance.status)
         analyses.append(
             ItemAnalysis(
                 parsed_item=parsed_item,
@@ -310,9 +329,31 @@ def _analyze_items(
                 duplicate_posting_id=duplicate_posting_id,
                 eligibility_status=eligibility.status,
                 reason_code=eligibility.reason_code,
+                relevance_status=relevance.status,
+                relevance_score=relevance.score,
             )
         )
     return analyses
+
+
+def as_text_from_metadata(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return " ".join(str(item) for item in value if str(item).strip()) or None
+    if isinstance(value, dict):
+        return " ".join(str(item) for item in value.values() if str(item).strip()) or None
+    text = str(value).strip()
+    return text or None
+
+
+def _technologies_from_metadata(metadata: dict[str, Any]) -> tuple[str, ...]:
+    value = metadata.get("skills")
+    if isinstance(value, list):
+        return tuple(str(item) for item in value if str(item).strip())
+    if isinstance(value, str) and value.strip():
+        return (value.strip(),)
+    return ()
 
 
 def _exact_keys(
@@ -322,6 +363,8 @@ def _exact_keys(
     content_hash: str,
 ) -> set[tuple[str, str]]:
     keys = {("hash", content_hash)}
+    if posting.provider_identity_key:
+        keys.add(("provider", posting.provider_identity_key))
     if posting.external_id:
         keys.add((f"external:{source_slug}", posting.external_id))
     if normalized_url:
@@ -371,6 +414,10 @@ def _valid_item_payload(analysis: ItemAnalysis) -> dict[str, Any]:
         "work_model": analysis.posting.work_model.value,
         "eligibility_status": analysis.eligibility_status.value,
         "reason_code": analysis.reason_code,
+        "relevance_status": (
+            analysis.relevance_status.value if analysis.relevance_status is not None else None
+        ),
+        "relevance_score": analysis.relevance_score,
         "duplicate_kind": analysis.duplicate_kind.value,
     }
 
@@ -404,6 +451,13 @@ def _detect_duplicate(
     normalized_url: str,
     content_hash: str,
 ) -> tuple[DuplicateKind, int | None, int | None]:
+    if posting.provider_identity_key:
+        duplicate_by_provider = session.scalar(
+            select(Posting).where(Posting.provider_identity_key == posting.provider_identity_key)
+        )
+        if duplicate_by_provider is not None:
+            return DuplicateKind.EXACT, duplicate_by_provider.id, duplicate_by_provider.job_id
+
     source = session.scalar(select(Source).where(Source.slug == source_slug))
     if source is not None:
         if posting.external_id:
@@ -597,6 +651,10 @@ def _create_posting(
     posting = Posting(
         source_id=source.id,
         source_run_id=run.id,
+        provider=analysis.posting.provider,
+        provider_scope=analysis.posting.provider_scope,
+        provider_external_id=analysis.posting.provider_external_id,
+        provider_identity_key=analysis.posting.provider_identity_key,
         external_id=analysis.posting.external_id,
         original_url=original_url,
         normalized_url=analysis.normalized_url,

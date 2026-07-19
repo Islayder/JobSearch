@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "id": 1001,
+      "companyId": 10,
+      "name": "Estagio em Dados",
+      "description": "<p>Atuar com SQL, Python e dashboards.</p>",
+      "careerPageId": 20,
+      "careerPageName": "Empresa Dados",
+      "careerPageUrl": "https://empresadados.gupy.io/",
+      "type": "vacancy_type_internship",
+      "publishedDate": "2026-07-10T12:00:00.000Z",
+      "applicationDeadline": "2026-08-10T23:59:59.000Z",
+      "isRemoteWork": true,
+      "city": "",
+      "state": "",
+      "country": "Brasil",
+      "jobUrl": "https://empresadados.gupy.io/jobs/1001?jobBoardSource=gupy_portal",
+      "badges": [],
+      "workplaceType": "remote",
+      "disabilities": [],
+      "skills": ["SQL", "Python"]
+    },
+    {
+      "id": 1002,
+      "companyId": 11,
+      "name": "Estagio CRM",
+      "description": "<p>Apoiar indicadores de CRM e relatorios.</p>",
+      "careerPageId": 21,
+      "careerPageName": "Empresa CRM",
+      "careerPageUrl": "https://empresacrm.gupy.io/",
+      "type": "vacancy_type_internship",
+      "publishedDate": "2026-07-11T12:00:00.000Z",
+      "applicationDeadline": "2026-08-11T23:59:59.000Z",
+      "isRemoteWork": false,
+      "city": "Belo Horizonte",
+      "state": "MG",
+      "country": "Brasil",
+      "jobUrl": "https://empresacrm.gupy.io/jobs/1002?jobBoardSource=gupy_portal",
+      "badges": ["friendlyBadge"],
+      "workplaceType": "hybrid",
+      "disabilities": ["pcd"],
+      "skills": ["Power BI"]
+    }
+  ],
+  "pagination": {
+    "total": 3,
+    "limit": 2,
+    "offset": 0
+  }
+}

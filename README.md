@@ -71,6 +71,19 @@ Coletas Greenhouse e Lever com `--max-items` menor que o payload real sao
 relatadas como snapshots parciais. Snapshots parciais, itens invalidos, falhas e
 HTTP 304 nao fecham vagas ausentes.
 
+Execute consultas publicas de descoberta:
+
+```powershell
+radar queries
+radar show-query gupy-estagio-dados
+radar collect-query gupy-estagio-dados --dry-run --max-pages 1 --max-items 5
+radar collect-search-plan --collector gupy --tag data --dry-run --max-queries 2
+radar query-health
+```
+
+Consultas de descoberta sao observacionais. Elas podem encontrar, atualizar e
+registrar ocorrencias, mas nunca fecham publicacoes por ausencia.
+
 Avalie e consulte resultados:
 
 ```powershell
@@ -108,6 +121,9 @@ Arquivos de exemplo e regras ficam em `config/`:
 - `network.example.yaml`
 - `company_boards.yaml`
 - `company_boards.example.yaml`
+- `search_queries.yaml`
+- `search_queries.example.yaml`
+- `relevance_rules.yaml`
 - `sources.example.yaml`
 
 O sistema carrega `config/profile.yaml` por padrao. Se ele nao existir, usa o
@@ -122,6 +138,8 @@ $env:RADAR_DATABASE_URL = "sqlite:///C:/caminho/para/radar.sqlite3"
 
 `config/company_boards.local.yaml` pode conter boards reais locais e e ignorado
 pelo Git.
+`config/search_queries.local.yaml` pode conter ajustes locais de consultas e
+tambem e ignorado pelo Git.
 
 ## Documentacao
 
@@ -132,14 +150,20 @@ pelo Git.
 - `docs/source-strategy.md`
 - `docs/data-model.md`
 - `docs/state-machine.md`
+- `docs/search-queries.md`
+- `docs/relevance.md`
+- `docs/gupy-collector.md`
+- `docs/collector-development-playbook.md`
 
 ## Escopo Atual
 
 A versao atual entrega ingestao por JSON/CSV local, coleta publica por JSON-LD
-JobPosting, Greenhouse e Lever, deduplicacao deterministica, avaliacao de
-elegibilidade, ranking explicavel, auditoria de importacao/coleta e CLI.
+JobPosting, Greenhouse, Lever e Gupy Public Portal, deduplicacao deterministica,
+avaliacao de elegibilidade, relevancia profissional, ranking explicavel,
+auditoria de importacao/coleta e CLI.
 Boards persistidos sao isolados por escopo estavel de coletor e key/token/URL;
 o nome da empresa e apenas informacao auxiliar de exibicao.
 
-Busca global, crawling recursivo, Gmail, IA, geracao de curriculo, Playwright,
-formularios e candidatura automatica ficam fora desta etapa.
+Pandape, Solides, LinkedIn, Indeed, crawling recursivo, Gmail, IA, geracao de
+curriculo, Playwright, formularios e candidatura automatica ficam fora desta
+etapa.

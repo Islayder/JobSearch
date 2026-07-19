@@ -23,6 +23,7 @@ from radar_vagas.domain.enums import (
     EmploymentType,
     JobStatus,
     PostingStatus,
+    RelevanceStatus,
     SourceRunStatus,
     WorkModel,
 )
@@ -78,6 +79,10 @@ class SourceRun(Base):
 
     source: Mapped[Source] = relationship(back_populates="runs")
     postings: Mapped[list["Posting"]] = relationship(back_populates="source_run")
+    search_queries: Mapped[list["SearchQuery"]] = relationship(
+        back_populates="last_run", foreign_keys="SearchQuery.last_run_id"
+    )
+    discovery_hits: Mapped[list["DiscoveryHit"]] = relationship(back_populates="source_run")
 
 
 class Company(Base):
@@ -148,13 +153,54 @@ class CompanyBoard(Base):
     last_run: Mapped[SourceRun | None] = relationship(foreign_keys=[last_run_id])
 
 
+class SearchQuery(Base):
+    __tablename__ = "search_queries"
+    __table_args__ = (
+        Index("ix_search_queries_key", "key", unique=True),
+        Index("ix_search_queries_collector_mode", "collector_type", "mode"),
+        Index("ix_search_queries_collection_scope_key", "collection_scope_key"),
+        Index("ix_search_queries_active_priority", "is_active", "priority"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(120), nullable=False)
+    collector_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    mode: Mapped[str] = mapped_column(String(80), nullable=False)
+    configuration_json: Mapped[str] = mapped_column(Text, nullable=False)
+    configuration_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    collection_scope_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    tags_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_run_id: Mapped[int | None] = mapped_column(ForeignKey("source_runs.id"), index=True)
+    last_complete_page_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disabled_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    last_run: Mapped[SourceRun | None] = relationship(
+        back_populates="search_queries", foreign_keys=[last_run_id]
+    )
+    hits: Mapped[list["DiscoveryHit"]] = relationship(
+        back_populates="search_query", cascade="all, delete-orphan"
+    )
+
+
 class Posting(Base):
     __tablename__ = "postings"
     __table_args__ = (
         UniqueConstraint("source_id", "external_id", name="uq_postings_source_external_id"),
         UniqueConstraint("source_id", "normalized_url", name="uq_postings_source_normalized_url"),
+        UniqueConstraint("provider_identity_key", name="uq_postings_provider_identity_key"),
         UniqueConstraint("content_hash", name="uq_postings_content_hash"),
         Index("ix_postings_status", "status"),
+        Index("ix_postings_provider_identity_key", "provider_identity_key"),
         Index("ix_postings_active_missing", "is_active", "missing_count"),
         Index("ix_postings_collection_scope_active", "collection_scope_key", "is_active"),
     )
@@ -163,6 +209,10 @@ class Posting(Base):
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
     source_run_id: Mapped[int | None] = mapped_column(ForeignKey("source_runs.id"), index=True)
     collection_scope_key: Mapped[str | None] = mapped_column(String(120))
+    provider: Mapped[str | None] = mapped_column(String(80))
+    provider_scope: Mapped[str | None] = mapped_column(String(255))
+    provider_external_id: Mapped[str | None] = mapped_column(String(500))
+    provider_identity_key: Mapped[str | None] = mapped_column(String(1200))
     external_id: Mapped[str | None] = mapped_column(String(255))
     original_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     normalized_url: Mapped[str] = mapped_column(String(1000), nullable=False)
@@ -189,6 +239,7 @@ class Posting(Base):
     revisions: Mapped[list["PostingRevision"]] = relationship(
         back_populates="posting", cascade="all, delete-orphan"
     )
+    discovery_hits: Mapped[list["DiscoveryHit"]] = relationship(back_populates="posting")
 
 
 class PostingRevision(Base):
@@ -286,8 +337,47 @@ class Decision(Base):
     ranking_breakdown_json: Mapped[str | None] = mapped_column(Text)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     rules_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    relevance_status: Mapped[RelevanceStatus | None] = mapped_column(enum_type(RelevanceStatus))
+    relevance_score: Mapped[int | None] = mapped_column(Integer)
+    relevance_reason_json: Mapped[str | None] = mapped_column(Text)
+    relevance_rules_version: Mapped[str | None] = mapped_column(String(80))
 
     job: Mapped[Job] = relationship(back_populates="decision")
+
+
+class DiscoveryHit(Base):
+    __tablename__ = "discovery_hits"
+    __table_args__ = (
+        UniqueConstraint(
+            "search_query_id",
+            "source_run_id",
+            "provider_identity_key",
+            name="uq_discovery_hits_query_run_provider",
+        ),
+        Index("ix_discovery_hits_query_run", "search_query_id", "source_run_id"),
+        Index("ix_discovery_hits_posting_id", "posting_id"),
+        Index("ix_discovery_hits_job_id", "job_id"),
+        Index("ix_discovery_hits_provider_identity_key", "provider_identity_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    search_query_id: Mapped[int] = mapped_column(
+        ForeignKey("search_queries.id"), nullable=False, index=True
+    )
+    source_run_id: Mapped[int] = mapped_column(ForeignKey("source_runs.id"), nullable=False)
+    posting_id: Mapped[int | None] = mapped_column(ForeignKey("postings.id"))
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"))
+    provider_identity_key: Mapped[str | None] = mapped_column(String(1200))
+    position_in_results: Mapped[int | None] = mapped_column(Integer)
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    match_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+    search_query: Mapped[SearchQuery] = relationship(back_populates="hits")
+    source_run: Mapped[SourceRun] = relationship(back_populates="discovery_hits")
+    posting: Mapped[Posting | None] = relationship(back_populates="discovery_hits")
+    job: Mapped[Job | None] = relationship()
 
 
 class Application(Base):

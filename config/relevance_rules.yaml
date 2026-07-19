@@ -1,0 +1,85 @@
+version: "2026-07-19"
+core_terms:
+  - análise de dados
+  - dados
+  - data analytics
+  - analytics
+  - business intelligence
+  - BI
+  - Power BI
+  - SQL
+  - Python
+  - engenharia de dados
+  - data engineering
+  - ciência de dados
+  - data science
+  - inteligência de negócios
+  - inteligência de mercado
+  - software
+  - desenvolvedor
+  - desenvolvedora
+  - desenvolvimento
+  - tecnologia
+  - automação
+  - QA
+  - testes automatizados
+  - produto de tecnologia
+adjacent_terms:
+  - crédito
+  - risco
+  - riscos
+  - fraude
+  - pricing
+  - planejamento
+  - finanças
+  - CRM
+  - marketing analytics
+  - performance
+  - People Analytics
+  - operações orientadas a dados
+  - operações
+  - logística analítica
+  - auditoria com dados
+  - processos
+  - produto
+  - indicadores
+  - relatórios
+  - automação de processos
+technology_terms:
+  - SQL
+  - Python
+  - Power BI
+  - dashboard
+  - ETL
+  - pipeline
+  - API
+  - APIs
+  - Git
+  - cloud
+negative_terms:
+  - digitação de dados
+  - cadastro de dados
+  - operador de caixa
+  - auxiliar administrativo
+  - recepção
+  - vendas
+  - atendimento ao cliente
+  - telemarketing
+  - estoque
+  - logística operacional
+weights:
+  title: 5
+  department: 3
+  description: 1
+  technology: 2
+  negative: 6
+thresholds:
+  core: 5
+  adjacent: 4
+  manual_review: 2
+  strong_negative: 6
+explanations:
+  core: Sinais principais de dados, tecnologia ou software encontrados.
+  adjacent: Sinais adjacentes com uso potencial de análise, indicadores ou processos.
+  manual_review: Há poucos sinais profissionais claros; revisar manualmente.
+  unrelated: Não há sinais suficientes da área alvo ou há sinais negativos fortes.

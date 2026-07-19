@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlsplit
 
+from radar_vagas.canonicalization.normalize import normalize_url
 from radar_vagas.collectors.common import (
     as_text,
     compact_text,
@@ -53,6 +54,10 @@ def map_jobposting_object(
     return ImportedPosting(
         source_name=source_name or f"JobPosting: {_host_label(page_url)}",
         source_type="jobposting",
+        provider="jobposting",
+        provider_scope=None,
+        provider_external_id=normalize_url(target_url),
+        provider_identity_key=f"jobposting:{normalize_url(target_url)}",
         external_id=identifier,
         url=target_url,
         title=title,

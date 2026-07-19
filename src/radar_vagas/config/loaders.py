@@ -12,6 +12,8 @@ from radar_vagas.config.schemas import (
     NetworkConfig,
     ProfileConfig,
     RankingWeightsConfig,
+    RelevanceRulesConfig,
+    SearchQueriesConfig,
 )
 
 
@@ -39,6 +41,13 @@ def load_ranking_weights(config_dir: Path) -> RankingWeightsConfig:
     if not path.exists():
         return RankingWeightsConfig()
     return RankingWeightsConfig.model_validate(_load_yaml(path))
+
+
+def load_relevance_rules(config_dir: Path) -> RelevanceRulesConfig:
+    path = config_dir / "relevance_rules.yaml"
+    if not path.exists():
+        return RelevanceRulesConfig()
+    return RelevanceRulesConfig.model_validate(_load_yaml(path))
 
 
 def load_network_config(config_dir: Path) -> NetworkConfig:
@@ -75,6 +84,33 @@ def load_company_boards(config_dir: Path) -> CompanyBoardsConfig:
         raw_boards = _merge_boards_by_key(raw_boards, override_board_dicts)
 
     return CompanyBoardsConfig.model_validate({"boards": raw_boards})
+
+
+def load_search_queries(config_dir: Path) -> SearchQueriesConfig:
+    preferred = config_dir / "search_queries.yaml"
+    fallback = config_dir / "search_queries.example.yaml"
+    local_override = config_dir / "search_queries.local.yaml"
+    path = preferred if preferred.exists() else fallback
+
+    raw_queries: list[dict[str, Any]] = []
+    if path.exists():
+        loaded = _load_yaml(path)
+        queries = loaded.get("queries", [])
+        if not isinstance(queries, list):
+            raise ValueError("search_queries.yaml deve conter uma lista em queries.")
+        raw_queries.extend(_ensure_query_dicts(queries, path))
+        _raise_duplicate_query_keys(raw_queries, path)
+
+    if local_override.exists():
+        loaded_override = _load_yaml(local_override)
+        override_queries = loaded_override.get("queries", [])
+        if not isinstance(override_queries, list):
+            raise ValueError("search_queries.local.yaml deve conter uma lista em queries.")
+        override_query_dicts = _ensure_query_dicts(override_queries, local_override)
+        _raise_duplicate_query_keys(override_query_dicts, local_override)
+        raw_queries = _merge_queries_by_key(raw_queries, override_query_dicts)
+
+    return SearchQueriesConfig.model_validate({"queries": raw_queries})
 
 
 def load_blocked_companies(config_dir: Path) -> BlockedCompaniesConfig:
@@ -171,6 +207,42 @@ def _raise_duplicate_board_keys(values: list[dict[str, Any]], path: Path) -> Non
     duplicates: set[str] = set()
     for board in values:
         key = str(board.get("key", "")).strip()
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+    if duplicates:
+        joined = ", ".join(sorted(duplicates))
+        raise ValueError(f"Keys duplicadas em {path}: {joined}")
+
+
+def _ensure_query_dicts(values: list[Any], path: Path) -> list[dict[str, Any]]:
+    queries: list[dict[str, Any]] = []
+    for index, value in enumerate(values, start=1):
+        if not isinstance(value, dict):
+            raise ValueError(f"Consulta invalida em {path}, item {index}: esperado objeto YAML.")
+        queries.append(value)
+    return queries
+
+
+def _merge_queries_by_key(
+    base: list[dict[str, Any]],
+    overrides: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for query in [*base, *overrides]:
+        key = str(query.get("key", "")).strip()
+        if key and key not in order:
+            order.append(key)
+        merged[key] = {**merged.get(key, {}), **query}
+    return [merged[key] for key in order]
+
+
+def _raise_duplicate_query_keys(values: list[dict[str, Any]], path: Path) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for query in values:
+        key = str(query.get("key", "")).strip()
         if key in seen:
             duplicates.add(key)
         seen.add(key)

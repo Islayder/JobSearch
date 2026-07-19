@@ -35,10 +35,13 @@ from radar_vagas.config.loaders import (
     load_network_config,
     load_profile,
     load_ranking_weights,
+    load_relevance_rules,
+    load_search_queries,
 )
-from radar_vagas.config.schemas import BoardConfig
+from radar_vagas.config.schemas import BoardConfig, SearchQueryConfig
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
+    CollectionAuthority,
     EligibilityStatus,
     EmploymentType,
     JobStatus,
@@ -65,9 +68,11 @@ from radar_vagas.persistence.models import (
     Company,
     CompanyBoard,
     Decision,
+    DiscoveryHit,
     ImportItemAudit,
     Job,
     Posting,
+    SearchQuery,
     SourceRun,
 )
 
@@ -477,6 +482,189 @@ def source_health_command(ctx: typer.Context) -> None:
     _run(ctx, action)
 
 
+@app.command("queries")
+def queries_command(
+    ctx: typer.Context,
+    collector: Annotated[
+        str | None,
+        typer.Option("--collector", help="Filtra por coletor."),
+    ] = None,
+    enabled: Annotated[
+        bool | None,
+        typer.Option("--enabled/--disabled", help="Filtra consultas ativas ou inativas."),
+    ] = None,
+    tag: Annotated[
+        str | None,
+        typer.Option("--tag", help="Filtra por tag."),
+    ] = None,
+) -> None:
+    """Lista consultas de descoberta configuradas."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        queries = load_search_queries(settings.config_dir).queries
+        if collector is not None:
+            queries = [query for query in queries if query.collector == collector.strip().lower()]
+        if enabled is not None:
+            queries = [query for query in queries if query.enabled is enabled]
+        if tag is not None:
+            queries = [query for query in queries if tag.lower() in query.tags]
+        with session_scope(settings) as session:
+            _print_queries(session, queries)
+
+    _run(ctx, action)
+
+
+@app.command("show-query")
+def show_query_command(
+    ctx: typer.Context,
+    query_key: Annotated[str, typer.Argument(help="Key da consulta configurada.")],
+) -> None:
+    """Mostra configuracao segura e historico de uma consulta."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        query = _query_by_key(load_search_queries(settings.config_dir).queries, query_key)
+        if query is None:
+            raise RadarError(f"Consulta nao encontrada: {query_key}")
+        with session_scope(settings) as session:
+            _print_query_detail(session, query)
+
+    _run(ctx, action)
+
+
+@app.command("collect-query")
+def collect_query_command(
+    ctx: typer.Context,
+    query_key: Annotated[str, typer.Argument(help="Key da consulta configurada.")],
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Coleta e valida sem alterar o banco."),
+    ] = False,
+    max_pages: Annotated[
+        int | None,
+        typer.Option("--max-pages", help="Limite positivo de paginas para esta execucao."),
+    ] = None,
+    max_items: Annotated[
+        int | None,
+        typer.Option("--max-items", help="Limite positivo de itens para esta execucao."),
+    ] = None,
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", help="Caminho para relatorio JSON de consulta."),
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Exibe traceback completo para este comando."),
+    ] = False,
+) -> None:
+    """Executa uma consulta de descoberta configurada."""
+
+    def action() -> None:
+        _apply_command_debug(ctx, debug)
+        settings = _settings(ctx)
+        query = _query_by_key(load_search_queries(settings.config_dir).queries, query_key)
+        if query is None:
+            raise RadarError(f"Consulta nao encontrada: {query_key}")
+        execution = _collect_single_query(
+            settings,
+            query,
+            dry_run=dry_run,
+            max_pages=max_pages,
+            max_items=max_items,
+        )
+        _write_and_print_query_report(execution, query, report)
+
+    _run(ctx, action)
+
+
+@app.command("collect-search-plan")
+def collect_search_plan_command(
+    ctx: typer.Context,
+    collector: Annotated[
+        str | None,
+        typer.Option("--collector", help="Filtra por coletor."),
+    ] = "gupy",
+    tag: Annotated[
+        list[str] | None,
+        typer.Option("--tag", help="Filtra consultas por tag. Pode ser usado mais de uma vez."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Coleta e valida sem alterar o banco."),
+    ] = False,
+    max_queries: Annotated[
+        int | None,
+        typer.Option("--max-queries", help="Limite positivo de consultas."),
+    ] = None,
+    max_pages_per_query: Annotated[
+        int | None,
+        typer.Option("--max-pages-per-query", help="Limite positivo de paginas por consulta."),
+    ] = None,
+    max_items_per_query: Annotated[
+        int | None,
+        typer.Option("--max-items-per-query", help="Limite positivo de itens por consulta."),
+    ] = None,
+    continue_on_error: Annotated[
+        bool,
+        typer.Option("--continue-on-error/--stop-on-error", help="Continua apos falhas."),
+    ] = True,
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", help="Caminho para relatorio JSON consolidado."),
+    ] = None,
+) -> None:
+    """Executa um plano de consultas de descoberta."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        queries = _filtered_queries(
+            settings,
+            collector=collector,
+            tags=tag or [],
+            max_queries=max_queries,
+        )
+        executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]] = []
+        errors: list[str] = []
+        for query in queries:
+            try:
+                executions.append(
+                    (
+                        query,
+                        _collect_single_query(
+                            settings,
+                            query,
+                            dry_run=dry_run,
+                            max_pages=max_pages_per_query,
+                            max_items=max_items_per_query,
+                        ),
+                    )
+                )
+            except Exception as exc:
+                errors.append(f"{query.key}: {exc}")
+                if not continue_on_error:
+                    raise
+        _print_collect_search_plan_result(executions, errors)
+        if report is not None:
+            _write_collect_search_plan_report(executions, errors, report)
+        if errors:
+            raise typer.Exit(1)
+
+    _run(ctx, action)
+
+
+@app.command("query-health")
+def query_health_command(ctx: typer.Context) -> None:
+    """Mostra um resumo de saude das consultas de descoberta."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            _print_query_health(session)
+
+    _run(ctx, action)
+
+
 @app.command("evaluate-all")
 def evaluate_all(ctx: typer.Context) -> None:
     """Avalia vagas novas ou pendentes."""
@@ -697,6 +885,7 @@ def _collect_single_board(
     since: str | None,
 ) -> CollectionExecutionReport:
     board = resolved.config
+    effective_max_items = _positive_override(max_items, "max-items")
     network = load_network_config(settings.config_dir)
     client = HttpClient(network.http)
     cache_etag: str | None = None
@@ -711,7 +900,7 @@ def _collect_single_board(
         board_token=board.board_token,
         url=board.url,
         dry_run=dry_run,
-        max_items=max_items,
+        max_items=effective_max_items,
         since=_parse_optional_datetime(since),
     )
     context = replace(
@@ -743,6 +932,75 @@ def _collect_single_board(
             result,
             board_config=board if resolved.persist else None,
         )
+
+
+def _collect_single_query(
+    settings: Settings,
+    query: SearchQueryConfig,
+    *,
+    dry_run: bool,
+    max_pages: int | None,
+    max_items: int | None,
+) -> CollectionExecutionReport:
+    if not query.enabled:
+        raise RadarError(f"Consulta desativada: {query.key}")
+    effective_max_pages = _positive_override(max_pages, "max-pages") or query.max_pages
+    effective_max_items = _positive_override(max_items, "max-items") or query.max_items
+    network = load_network_config(settings.config_dir)
+    client = HttpClient(network.http)
+    context = build_collection_context(
+        collector=query.collector,
+        company_name=None,
+        dry_run=dry_run,
+        max_items=effective_max_items,
+        max_pages=effective_max_pages,
+        authority=CollectionAuthority.DISCOVERY_QUERY,
+        query_key=query.key,
+        query_mode=query.mode,
+        query_parameters={
+            "search_text": query.search_text,
+            "filters": query.filters,
+            "hydrate_details": query.hydrate_details,
+        },
+    )
+    context = replace(
+        context,
+        source_name=f"Gupy query {query.key}",
+        source_type=query.collector,
+        collection_scope_key=query.collection_scope_key,
+        http_client=client,
+        collection_config=network.collection,
+    )
+    try:
+        result = get_collector(query.collector).collect(context)
+    except Exception as exc:
+        with session_scope(settings) as session:
+            record_failed_collection(
+                session,
+                context,
+                exc,
+                search_query_config=query,
+                settings=settings,
+            )
+        raise
+    finally:
+        client.close()
+    with session_scope(settings) as session:
+        return run_collection_persistence(
+            session,
+            settings,
+            context,
+            result,
+            search_query_config=query,
+        )
+
+
+def _positive_override(value: int | None, label: str) -> int | None:
+    if value is None:
+        return None
+    if value <= 0:
+        raise RadarError(f"--{label} deve ser um inteiro positivo.")
+    return value
 
 
 def _parse_optional_datetime(value: str | None) -> datetime | None:
@@ -804,6 +1062,9 @@ def _print_collection_execution(execution: CollectionExecutionReport) -> None:
         "eligible": "Elegiveis",
         "manual_review": "Revisao manual",
         "ineligible": "Incompativeis",
+        "core": "Relevancia core",
+        "adjacent": "Relevancia adjacente",
+        "unrelated": "Relevancia fora do alvo",
         "closed": "Encerradas",
         "reopened": "Reabertas",
         "invalid_items": "Itens invalidos",
@@ -849,6 +1110,142 @@ def _write_collect_all_report(
 ) -> None:
     payload = {
         "boards": [execution.to_dict() for execution in executions],
+        "errors": errors,
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _query_by_key(
+    queries: list[SearchQueryConfig],
+    query_key: str,
+) -> SearchQueryConfig | None:
+    for query in queries:
+        if query.key == query_key:
+            return query
+    return None
+
+
+def _filtered_queries(
+    settings: Settings,
+    *,
+    collector: str | None,
+    tags: list[str],
+    max_queries: int | None,
+) -> list[SearchQueryConfig]:
+    limit = _positive_override(max_queries, "max-queries")
+    queries = load_search_queries(settings.config_dir).enabled_queries()
+    if collector is not None:
+        queries = [query for query in queries if query.collector == collector.strip().lower()]
+    normalized_tags = {tag.strip().lower() for tag in tags if tag.strip()}
+    if normalized_tags:
+        queries = [query for query in queries if normalized_tags.issubset(set(query.tags))]
+    queries = sorted(queries, key=lambda query: (query.priority, query.key))
+    return queries[:limit] if limit is not None else queries
+
+
+def _write_and_print_query_report(
+    execution: CollectionExecutionReport,
+    query: SearchQueryConfig,
+    report_path: Path | None,
+) -> None:
+    if report_path is not None:
+        payload = _query_report_payload(query, execution)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+    _print_collection_execution(execution)
+
+
+def _query_report_payload(
+    query: SearchQueryConfig,
+    execution: CollectionExecutionReport,
+) -> dict[str, object]:
+    summary = execution.summary
+    metadata = execution.metadata
+    return {
+        "query_key": query.key,
+        "collector": query.collector,
+        "mode": query.mode,
+        "authority": CollectionAuthority.DISCOVERY_QUERY.value.lower(),
+        "started_at": execution.started_at.isoformat(),
+        "finished_at": execution.finished_at.isoformat(),
+        "dry_run": execution.dry_run,
+        "query": {
+            "search_text": query.search_text,
+            "filters": query.filters,
+            "fingerprint": query.configuration_fingerprint,
+            "collection_scope_key": query.collection_scope_key,
+        },
+        "network": {
+            "requests": execution.network.get("requests", 0),
+            "bytes_received": execution.network.get("bytes_received", 0),
+            "retries": execution.network.get("retries", 0),
+            "pages": int(metadata.get("pages", 0) or 0),
+        },
+        "summary": {
+            "raw_results": int(metadata.get("raw_results", summary.found) or 0),
+            "processed": summary.found,
+            "invalid": summary.invalid_items,
+            "new": summary.new,
+            "known": summary.unchanged,
+            "changed": summary.changed,
+            "exact_duplicates": summary.exact_duplicates,
+            "probable_duplicates": summary.probable_duplicates,
+            "core": summary.core,
+            "adjacent": summary.adjacent,
+            "manual_review": summary.manual_review,
+            "unrelated": summary.unrelated,
+            "eligible": summary.eligible,
+            "ineligible": summary.ineligible,
+        },
+        "partial": bool(metadata.get("partial", False)),
+        "truncated": bool(metadata.get("truncated", False)),
+        "warnings": execution.warnings,
+        "errors": execution.errors,
+        "public_interface": {
+            "host": metadata.get("host"),
+            "path": metadata.get("path"),
+            "type": metadata.get("public_interface"),
+        },
+    }
+
+
+def _print_collect_search_plan_result(
+    executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]],
+    errors: list[str],
+) -> None:
+    table = Table(title="Plano de consultas")
+    table.add_column("Query", no_wrap=True)
+    table.add_column("Coletor")
+    table.add_column("Encontradas", justify="right")
+    table.add_column("Novas", justify="right")
+    table.add_column("Conhecidas", justify="right")
+    table.add_column("Incompativeis", justify="right")
+    for query, execution in executions:
+        summary = execution.summary
+        table.add_row(
+            query.key,
+            query.collector,
+            str(summary.found),
+            str(summary.new),
+            str(summary.unchanged),
+            str(summary.ineligible),
+        )
+    console.print(table)
+    for error in errors:
+        console.print(f"[red]Falha:[/red] {error}")
+
+
+def _write_collect_search_plan_report(
+    executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]],
+    errors: list[str],
+    report_path: Path,
+) -> None:
+    payload = {
+        "queries": [_query_report_payload(query, execution) for query, execution in executions],
         "errors": errors,
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1209,6 +1606,161 @@ def _print_source_health(session: Session) -> None:
         console.print("Nenhum board persistido ainda.")
 
 
+def _print_queries(session: Session, queries: list[SearchQueryConfig]) -> None:
+    table = Table(title="Consultas")
+    table.add_column("Key", no_wrap=True)
+    table.add_column("Coletor")
+    table.add_column("Modo")
+    table.add_column("Ativa")
+    table.add_column("Prioridade", justify="right")
+    table.add_column("Ultimo sucesso")
+    table.add_column("Falhas", justify="right")
+    table.add_column("Hits", justify="right")
+    table.add_column("Estado")
+    for query in sorted(queries, key=lambda item: (item.priority, item.key)):
+        db_query = session.scalar(select(SearchQuery).where(SearchQuery.key == query.key))
+        hits = _hits_for_query(session, db_query) if db_query is not None else 0
+        table.add_row(
+            query.key,
+            query.collector,
+            query.mode,
+            "sim" if query.enabled else "nao",
+            str(query.priority),
+            _date_or_dash(db_query.last_success_at if db_query is not None else None),
+            str(db_query.consecutive_failures if db_query is not None else 0),
+            str(hits),
+            _query_state(query, db_query),
+        )
+    if queries:
+        console.print(table)
+    else:
+        console.print("Nenhuma consulta encontrada para os filtros informados.")
+
+
+def _print_query_detail(session: Session, query: SearchQueryConfig) -> None:
+    db_query = session.scalar(select(SearchQuery).where(SearchQuery.key == query.key))
+    details = Table.grid(padding=(0, 2))
+    details.add_column(style="bold")
+    details.add_column()
+    details.add_row("Key", query.key)
+    details.add_row("Coletor", query.collector)
+    details.add_row("Modo", query.mode)
+    details.add_row("Texto", query.search_text)
+    details.add_row("Filtros", json.dumps(query.filters, ensure_ascii=False, sort_keys=True))
+    details.add_row("Fingerprint", query.configuration_fingerprint)
+    details.add_row("Scope", query.collection_scope_key)
+    details.add_row("Prioridade", str(query.priority))
+    details.add_row("Tags", ", ".join(query.tags) or "-")
+    details.add_row("Ativa", "sim" if query.enabled else "nao")
+    if db_query is not None:
+        details.add_row("Ultima execucao", _date_or_dash(db_query.last_checked_at))
+        details.add_row("Ultimo sucesso", _date_or_dash(db_query.last_success_at))
+        details.add_row("Ultima falha", _date_or_dash(db_query.last_failed_at))
+        details.add_row("Falhas consecutivas", str(db_query.consecutive_failures))
+        details.add_row("Hits", str(_hits_for_query(session, db_query)))
+        details.add_row("Vagas unicas", str(_unique_postings_for_query(session, db_query)))
+        if db_query.last_run_id is not None:
+            run = session.get(SourceRun, db_query.last_run_id)
+            details.add_row("Novos resultados", str(run.items_created if run else 0))
+            details.add_row("Conhecidos", str(run.items_skipped if run else 0))
+            details.add_row("Ultima run", str(db_query.last_run_id))
+    console.print(Panel(details, title="Consulta"))
+    if db_query is None:
+        console.print("Consulta ainda nao possui historico persistido.")
+
+
+def _print_query_health(session: Session) -> None:
+    queries = session.scalars(select(SearchQuery).order_by(SearchQuery.priority.asc())).all()
+    active = [query for query in queries if query.is_active]
+    healthy = [query for query in active if query.consecutive_failures == 0]
+    warning = [query for query in active if 0 < query.consecutive_failures < 3]
+    failing = [query for query in active if query.consecutive_failures >= 3]
+    no_result = [
+        query
+        for query in active
+        if _hits_for_query(session, query) == 0 and query.last_success_at is not None
+    ]
+
+    summary = Table(title="Saude das consultas")
+    summary.add_column("Metrica")
+    summary.add_column("Valor", justify="right")
+    summary.add_row("Consultas ativas", str(len(active)))
+    summary.add_row("Saudaveis", str(len(healthy)))
+    summary.add_row("Com avisos", str(len(warning)))
+    summary.add_row("Falhando", str(len(failing)))
+    summary.add_row("Sem resultado", str(len(no_result)))
+    console.print(summary)
+
+    table = Table(title="Consultas persistidas")
+    table.add_column("Key", no_wrap=True)
+    table.add_column("Coletor")
+    table.add_column("Estado")
+    table.add_column("Ultima execucao")
+    table.add_column("Requests", justify="right")
+    table.add_column("Encontradas", justify="right")
+    table.add_column("Novas", justify="right")
+    table.add_column("Hits", justify="right")
+    table.add_column("Unicas", justify="right")
+    for query in queries:
+        run = session.get(SourceRun, query.last_run_id) if query.last_run_id else None
+        table.add_row(
+            query.key,
+            query.collector_type,
+            _persisted_query_health_label(query),
+            _date_or_dash(query.last_checked_at),
+            "-",
+            str(run.items_found if run else 0),
+            str(run.items_created if run else 0),
+            str(_hits_for_query(session, query)),
+            str(_unique_postings_for_query(session, query)),
+        )
+    if queries:
+        console.print(table)
+    else:
+        console.print("Nenhuma consulta persistida ainda.")
+
+
+def _hits_for_query(session: Session, query: SearchQuery | None) -> int:
+    if query is None:
+        return 0
+    value = session.scalar(
+        select(func.count(DiscoveryHit.id)).where(DiscoveryHit.search_query_id == query.id)
+    )
+    return int(value or 0)
+
+
+def _unique_postings_for_query(session: Session, query: SearchQuery | None) -> int:
+    if query is None:
+        return 0
+    value = session.scalar(
+        select(func.count(func.distinct(DiscoveryHit.posting_id))).where(
+            DiscoveryHit.search_query_id == query.id,
+            DiscoveryHit.posting_id.is_not(None),
+        )
+    )
+    return int(value or 0)
+
+
+def _query_state(query: SearchQueryConfig, db_query: SearchQuery | None) -> str:
+    if not query.enabled:
+        return "desativada"
+    if db_query is None or db_query.last_checked_at is None:
+        return "sem historico"
+    return _persisted_query_health_label(db_query)
+
+
+def _persisted_query_health_label(query: SearchQuery) -> str:
+    if not query.is_active:
+        return "desativada"
+    if query.consecutive_failures >= 3:
+        return "falhando"
+    if query.consecutive_failures > 0:
+        return "aviso"
+    if query.last_success_at is not None:
+        return "saudavel"
+    return "sem historico"
+
+
 def _active_postings_for_board(session: Session, board: CompanyBoard) -> int:
     value = session.scalar(_posting_count_statement(board, active_only=True))
     return int(value or 0)
@@ -1371,7 +1923,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0004_collection_scope_keys":
+    if version == "0005_search_queries_and_gupy":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 
@@ -1382,8 +1934,10 @@ def _check_yaml_configs(settings: Settings) -> list[tuple[str, str, str]]:
         ("Perfil", lambda: load_profile(settings.config_dir, settings.profile_path).path),
         ("Elegibilidade", lambda: load_eligibility_rules(settings.config_dir).rules_version),
         ("Ranking", lambda: str(load_ranking_weights(settings.config_dir).recommended_min_score)),
+        ("Relevância", lambda: load_relevance_rules(settings.config_dir).version),
         ("Rede", lambda: load_network_config(settings.config_dir).http.user_agent),
         ("Boards", lambda: str(len(load_company_boards(settings.config_dir).boards))),
+        ("Consultas", lambda: str(len(load_search_queries(settings.config_dir).queries))),
         (
             "Empresas bloqueadas",
             lambda: str(len(load_blocked_companies(settings.config_dir).all_companies)),
