@@ -29,6 +29,12 @@ Cada nova versao grava hash do arquivo, hash da estrutura validada e o caminho
 local de origem. Reimportar o mesmo conteudo nao cria duplicata. Importar
 conteudo diferente cria nova versao e torna essa versao ativa por padrao.
 
+Na interface web, uploads seguem o mesmo modelo de validacao, mas nao preservam
+o arquivo bruto nem caminho temporario. O servico recebe bytes validados, grava
+hash/formato/origem sanitizada e descarta o conteudo original. A criacao manual
+na web usa `ProfessionalProfileInput` diretamente e nao cria JSON em
+`data/imports`.
+
 ```powershell
 radar activate-profile 1
 ```
@@ -46,6 +52,12 @@ perfil e sem copiar o curriculo real para o repositorio.
 Habilidades podem ter evidencias diretas e tambem evidencias derivadas de
 experiencias ou projetos. O sistema nunca inventa competencia: uma habilidade
 citada sem evidencia aparece como `NOT_PROVEN`, nao como `MATCHED`.
+
+Nivel informado na habilidade ajuda a avaliar requisitos de senioridade quando
+existe evidencia para a habilidade, mas o nivel sozinho nao prova dominio.
+Quando a interface mostra "Habilidade informada, mas ainda sem evidencia
+associada.", a habilidade permanece declarada ate que o usuario associe
+experiencia, projeto, curso, idioma ou evidencia direta.
 
 Requisitos extraidos de listas de tecnologias da vaga entram como
 `RequirementKind.UNKNOWN` quando a vaga nao deixa claro se sao obrigatorios ou

@@ -36,6 +36,13 @@ As transicoes aceitas sao controladas por uma politica unica:
 - `SHORTLISTED` pode voltar para `SEEN` ou virar `DISMISSED` ou `APPLIED`.
 - `DISMISSED` volta para `UNREVIEWED` somente por `restore-job`.
 
+A interface web expõe botoes somente quando a transicao e valida para o estado
+atual. Remover dos favoritos usa a transicao `SHORTLISTED -> SEEN`, nao uma
+alteracao direta de enum. Abas de vagas cobrem novas, recomendadas, favoritas,
+aplicadas, aguardando revisao, descartadas e encerradas. A lista padrao esconde
+aplicadas, descartadas, fechadas e expiradas ate que a aba/filtro correspondente
+seja escolhido.
+
 Repetir uma acao que nao muda o estado efetivo nao cria evento duplicado.
 Transicoes contraditorias falham com erro claro antes de gravar alteracoes.
 

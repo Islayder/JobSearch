@@ -6,7 +6,40 @@
       <h1>{{ application.job.canonical_title }}</h1>
       <p>{{ application.job.company.canonical_name }} · {{ application.status|label }} · {{ application.stage|label }}</p>
     </div>
-    <a class="button secondary" href="/jobs/{{ application.job.id }}">Abrir vaga</a>
+    <div class="actions">
+      {% if application.application_url %}
+        <a class="button" href="{{ application.application_url }}" target="_blank" rel="noopener noreferrer">Pagina oficial</a>
+      {% endif %}
+      <a class="button secondary" href="/jobs/{{ application.job.id }}">Abrir vaga</a>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Dados da candidatura</h2>
+      <p>Status: <span class="badge {{ application.status|status_class }}">{{ application.status|label }}</span></p>
+      <p>Etapa derivada: {{ application.stage|label }}</p>
+      <p>Plataforma: {{ application.platform or "-" }}</p>
+      <p>Referencia: {{ application.external_reference or "-" }}</p>
+      <p>Enviada em: {{ application.applied_at|datetime(ui.timezone) }}</p>
+      {% if application.notes %}<p>{{ application.notes }}</p>{% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Atualizar fluxo</h2>
+      <div class="actions">
+        {% for event_type, text in event_shortcuts %}
+          <form class="inline" action="/applications/{{ application.id }}/events" method="post" {% if event_type in terminal_events %}data-confirm="Registrar mudanca final da candidatura?"{% endif %}>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="event_type" value="{{ event_type.value }}">
+            {% if event_type in terminal_events %}
+              <input type="hidden" name="confirm_terminal" value="on">
+            {% endif %}
+            <button class="{% if event_type in terminal_events %}danger{% else %}secondary{% endif %}" type="submit">{{ text }}</button>
+          </form>
+        {% endfor %}
+      </div>
+    </div>
   </section>
 
   <section class="grid">
@@ -27,7 +60,7 @@
 
     <form class="card" action="/applications/{{ application.id }}/events" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <h2>Adicionar evento</h2>
+      <h2>Evento detalhado</h2>
       <div class="field">
         <label for="event_type">Tipo</label>
         <select id="event_type" name="event_type">
@@ -40,6 +73,10 @@
         <label for="occurred_at">Data/hora</label>
         <input id="occurred_at" name="occurred_at" type="datetime-local">
       </div>
+      <label class="check">
+        <input name="confirm_terminal" type="checkbox">
+        Confirmo se for rejeicao, oferta ou retirada
+      </label>
       <div class="field">
         <label for="notes">Notas</label>
         <textarea id="notes" name="notes"></textarea>

@@ -37,6 +37,11 @@ O timezone e validado com a base IANA disponivel via `zoneinfo`. As datas sao
 persistidas em UTC e o timezone original e preservado em `CareerEvent.timezone`.
 `America/Sao_Paulo` e apenas o padrao local configuravel.
 
+URLs de reuniao devem ser passadas cruas ao servico de agenda. A validacao do
+servico aceita apenas HTTP/HTTPS, rejeita credenciais, localhost, dominios
+`.local` e IPs privados literais, e retorna erro claro em vez de transformar a
+entrada invalida em vazio.
+
 Transicoes validas de `confirmation_status`:
 
 - `SUGGESTED` para `CONFIRMED`, `DISMISSED` ou `CANCELLED`.
@@ -64,3 +69,12 @@ radar confirm-agenda-event 1
 radar complete-agenda-event 1
 radar cancel-agenda-event 1
 ```
+
+## Interface Web
+
+A tela `/agenda` renderiza calendario mensal no servidor, com semanas completas
+de segunda a domingo, navegacao de mes anterior/proximo, destaque do dia atual,
+lista do periodo e secao para eventos sem data. Filtros aceitam tipo, origem,
+status, vaga e candidatura. A criacao usa seletores de vaga e candidatura; IDs
+continuam sendo persistidos internamente, mas nao sao o fluxo principal para o
+usuario.

@@ -85,6 +85,19 @@ Flask, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
    `radar show-job`, `radar stats`, `radar boards` e `radar source-health`
    consultam ou atualizam o banco.
 
+## Interface Web
+
+A web e organizada em rotas por area (`dashboard`, `jobs`, `applications`,
+`agenda`, `profiles`, `sources`, `settings`) e consultas separadas em
+`web.queries`. Rotas devem ser finas: validam entrada web, chamam servicos de
+dominio e renderizam templates. Regras de estado, compatibilidade, agenda e
+candidaturas permanecem nos servicos compartilhados com a CLI.
+
+O executor de coleta da web e local e em memoria. Ele dispara o plano de busca
+em thread de fundo, permite uma execucao por processo e expoe status para
+polling local. Ele nao cria infraestrutura externa, nao agenda coletas
+automaticas e sanitiza mensagens antes de exibir ao usuario.
+
 ## Autoridade da Coleta
 
 Toda coleta tem autoridade explicita:

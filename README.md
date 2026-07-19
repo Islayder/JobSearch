@@ -163,6 +163,13 @@ radar web
 radar web --port 8001 --no-open-browser
 ```
 
+Na interface web, uploads de perfil sao processados em memoria com limite de
+tamanho e nao ficam gravados em `data/imports`. A criacao manual de perfil salva
+uma nova versao estruturada diretamente no banco; habilidades digitadas sem
+evidencia explicita continuam como declaradas, nao comprovadas. A tela de fontes
+inicia coletas manuais em segundo plano, uma por vez, e mostra somente mensagens
+sanitizadas.
+
 ## Marco 4.1
 
 O pipeline de descoberta Gupy usa a mesma entrada canonica de relevancia no

@@ -7,30 +7,38 @@
       <p>Fila local de revisao, compromissos e candidaturas.</p>
     </div>
     <div class="actions">
-      <a class="button" href="/jobs">Revisar vagas</a>
+      <a class="button" href="/jobs?tab=aguardando-revisao">Revisar hoje</a>
       <a class="button secondary" href="/agenda">Abrir agenda</a>
     </div>
   </section>
 
   <section class="metrics" aria-label="Resumo">
-    <div class="metric"><strong>{{ dashboard.metrics.to_review }}</strong><span>para revisar</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.new_jobs }}</strong><span>novas</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.unreviewed }}</strong><span>nao revisadas</span></div>
     <div class="metric"><strong>{{ dashboard.metrics.recommended }}</strong><span>recomendadas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.commitments }}</strong><span>compromissos</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.waiting_applications }}</strong><span>candidaturas aguardando</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.shortlisted }}</strong><span>favoritas</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.active_applications }}</strong><span>candidaturas ativas</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.awaiting_update }}</strong><span>aguardando retorno</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.tests_cases }}</strong><span>testes e cases</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.interviews }}</strong><span>entrevistas</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.offers }}</strong><span>ofertas</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.upcoming_commitments }}</strong><span>proximos compromissos</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.sources_with_problem }}</strong><span>fontes em atencao</span></div>
+    <div class="metric"><strong>{{ dashboard.metrics.page_size }}</strong><span>itens por pagina</span></div>
   </section>
 
   <section class="grid">
     <div class="card">
-      <h2>Vagas recentes</h2>
+      <h2>Revisar hoje</h2>
       <div class="list">
-        {% for job in dashboard.latest_jobs %}
+        {% for job in dashboard.review_today %}
           <div class="row">
             <a href="/jobs/{{ job.id }}"><strong>{{ job.canonical_title }}</strong></a>
             <div class="muted">{{ job.company.canonical_name }} · {{ job.status|label }}</div>
             <div>{{ job.description|preview(120) }}</div>
           </div>
         {% else %}
-          <p class="empty">Nenhuma vaga ativa.</p>
+          <p class="empty">Nenhuma vaga ativa para revisao.</p>
         {% endfor %}
       </div>
     </div>
@@ -39,7 +47,7 @@
       <div class="list">
         {% for event in dashboard.upcoming_events %}
           <div class="row">
-            <strong>{{ event.title }}</strong>
+            <a href="/agenda/events/{{ event.id }}/edit"><strong>{{ event.title }}</strong></a>
             <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
             {% if event.job %}<a href="/jobs/{{ event.job.id }}">{{ event.job.company.canonical_name }}</a>{% endif %}
           </div>
@@ -52,30 +60,59 @@
 
   <section class="grid three">
     <div class="card">
-      <h2>Acoes rapidas</h2>
-      <div class="actions">
-        <a class="button secondary" href="/profile">Perfil ativo</a>
-        <a class="button secondary" href="/sources">Fontes</a>
+      <h2>Aguardando retorno</h2>
+      {% for application in dashboard.awaiting_update %}
+        <div class="row"><a href="/applications/{{ application.id }}">{{ application.job.company.canonical_name }}</a></div>
+      {% else %}
+        <p class="empty">Nada aguardando retorno.</p>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <h2>Testes e cases</h2>
+      {% for application in dashboard.tests_cases %}
+        <div class="row"><a href="/applications/{{ application.id }}">{{ application.job.company.canonical_name }} · {{ application.stage|label }}</a></div>
+      {% else %}
+        <p class="empty">Nenhum teste ou case ativo.</p>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <h2>Entrevistas</h2>
+      {% for application in dashboard.interviews %}
+        <div class="row"><a href="/applications/{{ application.id }}">{{ application.job.company.canonical_name }} · {{ application.stage|label }}</a></div>
+      {% else %}
+        <p class="empty">Nenhuma entrevista registrada.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Saude das fontes</h2>
+      <div class="list">
+        {% for row in dashboard.source_health.rows %}
+          <div class="row">
+            <span class="badge {{ row.state }}">{{ row.state }}</span>
+            <strong>{{ row.kind }} · {{ row.label }}</strong>
+            <div class="muted">{{ row.message }}</div>
+          </div>
+        {% else %}
+          <p class="empty">Nenhuma fonte registrada.</p>
+        {% endfor %}
       </div>
     </div>
     <div class="card">
-      <h2>Perfil</h2>
+      <h2>Acoes rapidas</h2>
+      <div class="actions">
+        <a class="button secondary" href="/jobs?tab=recomendadas">Recomendadas</a>
+        <a class="button secondary" href="/applications?shortcut=waiting-update">Aguardando retorno</a>
+        <a class="button secondary" href="/profile">Perfil ativo</a>
+        <a class="button secondary" href="/sources">Fontes</a>
+      </div>
       {% if dashboard.active_profile %}
-        <p>{{ dashboard.active_profile.profile.name }} · versao {{ dashboard.active_profile.version_number }}</p>
+        <p class="muted">{{ dashboard.active_profile.profile.name }} · versao {{ dashboard.active_profile.version_number }}</p>
       {% else %}
         <p class="empty">Nenhum perfil ativo.</p>
       {% endif %}
-    </div>
-    <div class="card">
-      <h2>Saude das fontes</h2>
-      {% for run in dashboard.recent_runs %}
-        <div class="row">
-          <span class="badge {{ run.status|status_class }}">{{ run.status|label }}</span>
-          <span>{{ run.source.name }}</span>
-        </div>
-      {% else %}
-        <p class="empty">Nenhuma coleta registrada.</p>
-      {% endfor %}
     </div>
   </section>
 {% endblock %}

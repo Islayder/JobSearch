@@ -53,18 +53,21 @@ A tela de perfil permite ajustar configuracoes basicas sem editar YAML.
 ## Telas
 
 - Dashboard: fila de revisao, compromissos, candidaturas aguardando retorno,
-  vagas recentes, saude de fontes e atalhos.
+  testes/cases, entrevistas, ofertas, vagas recentes, saude de fontes e atalhos.
 - Onboarding: privacidade, timezone, importacao YAML/JSON/TXT, criacao manual,
   revisao do perfil, ativacao e comparacao inicial de vagas.
 - Vagas: busca textual, filtros, abas, paginacao, detalhe, favoritar,
   descartar, restaurar, registrar candidatura manual e criar evento.
-- Candidaturas: lista filtravel, detalhe, timeline e novos eventos.
-- Agenda: proximos eventos, calendario mensal, itens sem data, sugestoes e
-  transicoes de confirmar, dispensar, concluir e cancelar.
+- Candidaturas: lista filtravel por empresa, status, etapa, plataforma,
+  periodo e atalhos de retorno/teste/case/entrevista/oferta/rejeicao/retirada;
+  o detalhe mostra timeline, agenda ligada e botoes de evento do fluxo.
+- Agenda: calendario mensal real de segunda a domingo, navegacao por mes,
+  filtros por tipo/origem/status/vaga/candidatura, itens sem data e transicoes
+  de confirmar, dispensar, concluir e cancelar.
 - Perfil: perfil ativo, versoes, importacao, criacao manual, ativacao e
   comparacao em lote.
 - Fontes: saude de boards, consultas e execucoes recentes, com acao manual de
-  coleta.
+  coleta em segundo plano.
 
 ## Seguranca Local
 
@@ -76,8 +79,21 @@ Uploads sao limitados por tamanho, extensao e conteudo aceito. A web nao faz
 fetch de URLs externas pelo servidor, nao faz login, nao usa cookies de
 plataformas, nao executa Playwright e nao preenche formularios.
 
+Uploads de perfil nao sao persistidos como arquivos brutos. A interface le o
+conteudo em blocos ate o limite permitido, valida extensao/UTF-8/conteudo e
+envia os bytes ao servico de perfil. Apenas formato, hash e origem sanitizada
+podem ficar registrados. O fluxo manual cria `ProfessionalProfileInput`
+diretamente, sem JSON temporario em `data/imports`.
+
+Habilidade digitada sem evidencia explicita e tratada como declarada, nao como
+comprovada. Experiencias e projetos podem comprovar habilidades quando
+referenciam a skill; a interface nao inventa evidencia.
+
 ## Coleta Manual
 
 A tela de fontes pode iniciar uma coleta manual pelo executor interno do plano
-de busca. So uma coleta roda por processo. O status e mantido em memoria e cada
-execucao persistida registra `SourceRun`.
+de busca. So uma coleta roda por processo e o clique retorna imediatamente com
+status consultavel pela propria pagina. O status e mantido em memoria e cada
+execucao persistida registra `SourceRun`. Mensagens exibidas passam por
+sanitizacao para remover query strings, tokens, caminhos locais, URLs completas
+e detalhes de traceback.

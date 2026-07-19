@@ -203,6 +203,26 @@ def shortlist_job(session: Session, job_id: int, *, source: str = "manual") -> J
     return state
 
 
+def unshortlist_job(session: Session, job_id: int, *, source: str = "manual") -> JobReviewState:
+    job = _job_or_raise(session, job_id)
+    state = _get_or_create_review_state(session, job)
+    transition = apply_review_transition(job, state, ReviewState.SEEN)
+    if not transition.changed:
+        return state
+    job.updated_at = utc_now()
+    state.updated_at = utc_now()
+    _add_review_event(
+        session,
+        job=job,
+        event_type=transition.event_type,
+        previous_job_status=transition.previous_job_status,
+        previous_review_state=transition.previous_review_state,
+        new_review_state=transition.new_review_state,
+        source=source,
+    )
+    return state
+
+
 def dismiss_job(
     session: Session,
     job_id: int,

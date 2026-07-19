@@ -8,9 +8,55 @@
     </div>
   </section>
 
+  <nav class="tabs" aria-label="Atalhos de candidaturas">
+    <a class="{% if not filters.shortcut %}active{% endif %}" href="/applications">Todas</a>
+    {% for key, text in shortcuts.items() %}
+      <a class="{% if filters.shortcut == key %}active{% endif %}" href="/applications?shortcut={{ key }}">{{ text }}</a>
+    {% endfor %}
+  </nav>
+
+  <form class="toolbar filters" method="get" action="/applications">
+    <input type="hidden" name="shortcut" value="{{ filters.shortcut }}">
+    <div class="field">
+      <label for="company">Empresa</label>
+      <input id="company" name="company" value="{{ filters.company }}">
+    </div>
+    <div class="field">
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">Todos</option>
+        {% for value, text in statuses.items() %}
+          <option value="{{ value.value }}" {% if filters.status == value.value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="stage">Etapa</label>
+      <select id="stage" name="stage">
+        <option value="">Todas</option>
+        {% for value, text in stages.items() %}
+          <option value="{{ value.value }}" {% if filters.stage == value.value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="platform">Plataforma</label>
+      <input id="platform" name="platform" value="{{ filters.platform }}">
+    </div>
+    <div class="field">
+      <label for="from_date">De</label>
+      <input id="from_date" name="from_date" type="date" value="{{ filters.from_date }}">
+    </div>
+    <div class="field">
+      <label for="to_date">Ate</label>
+      <input id="to_date" name="to_date" type="date" value="{{ filters.to_date }}">
+    </div>
+    <button type="submit">Filtrar</button>
+  </form>
+
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Vaga</th><th>Empresa</th><th>Status</th><th>Etapa</th><th>Atualizada</th></tr></thead>
+      <thead><tr><th>Vaga</th><th>Empresa</th><th>Status</th><th>Etapa</th><th>Plataforma</th><th>Atualizada</th></tr></thead>
       <tbody>
         {% for application in applications %}
           <tr>
@@ -18,10 +64,11 @@
             <td>{{ application.job.company.canonical_name }}</td>
             <td><span class="badge {{ application.status|status_class }}">{{ application.status|label }}</span></td>
             <td>{{ application.stage|label }}</td>
+            <td>{{ application.platform or "-" }}</td>
             <td>{{ application.updated_at|datetime(ui.timezone) }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="empty">Nenhuma candidatura registrada.</td></tr>
+          <tr><td colspan="6" class="empty">Nenhuma candidatura registrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>

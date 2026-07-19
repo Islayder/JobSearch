@@ -56,6 +56,17 @@ estruturado. PDF e DOCX nao sao analisados nesta etapa. A interface nao busca
 URLs externas pelo servidor, nao faz login, nao envia curriculo e nao preenche
 formularios.
 
+Uploads web de perfil nao sao gravados em `data/imports` nem preservados como
+arquivo temporario de negocio. A leitura acontece em blocos com limite de
+tamanho; em sucesso ou erro, o conteudo bruto e descartado. O banco pode manter
+hash, formato e origem sanitizada, mas nao caminho temporario inutil nem
+conteudo do arquivo. Imports feitos pela CLI continuam podendo registrar o
+caminho escolhido pelo usuario.
+
+Mensagens de coleta exibidas na web sao sanitizadas. Query strings, tokens,
+cookies, caminhos locais, URLs completas, tracebacks e corpo de resposta nao
+devem aparecer em tela ou logs de status da interface.
+
 ## Exportacoes
 
 Relatorios em `data/exports/` podem conter dados operacionais ou pessoais. Eles

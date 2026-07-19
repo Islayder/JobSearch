@@ -18,6 +18,7 @@ from radar_vagas.persistence.database import create_sqlite_engine, session_facto
 from radar_vagas.persistence.migrations import run_migrations
 from radar_vagas.web.collection import LocalCollectionRunner
 from radar_vagas.web.routes import router
+from radar_vagas.web.sanitization import sanitize_message
 from radar_vagas.web.security import (
     apply_security_headers,
     resolve_csrf_token,
@@ -107,6 +108,7 @@ def _templates() -> Jinja2Templates:
     templates.env.filters["preview"] = preview
     templates.env.filters["json_list"] = json_list
     templates.env.filters["status_class"] = status_class
+    templates.env.filters["sanitize"] = sanitize_message
     templates.env.globals["safe_external_url"] = safe_external_url
     return templates
 

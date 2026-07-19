@@ -4,7 +4,7 @@ import secrets
 from typing import Any
 from urllib.parse import urlsplit
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, UploadFile
 from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.responses import Response
 
@@ -119,6 +119,29 @@ def validate_upload_metadata(filename: str, content: bytes) -> None:
         content.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="Perfil deve estar em UTF-8.") from exc
+
+
+async def read_limited_profile_upload(file: UploadFile) -> bytes:
+    filename = file.filename or "profile.txt"
+    suffix = _suffix(filename)
+    if suffix not in ALLOWED_PROFILE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="Formato de perfil nao suportado.")
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            chunk = await file.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_PROFILE_UPLOAD_BYTES:
+                raise HTTPException(status_code=400, detail="Arquivo de perfil muito grande.")
+            chunks.append(chunk)
+    finally:
+        await file.close()
+    content = b"".join(chunks)
+    validate_upload_metadata(filename, content)
+    return content
 
 
 def clean_upload_suffix(filename: str) -> str:

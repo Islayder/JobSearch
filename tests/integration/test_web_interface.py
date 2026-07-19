@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 import re
 import socket
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +27,7 @@ from radar_vagas.domain.enums import (
     EmploymentType,
     JobStatus,
     RelevanceStatus,
+    RequirementMatchStatus,
     ReviewState,
     WorkModel,
 )
@@ -40,7 +44,7 @@ from radar_vagas.persistence.models import (
     ProfessionalProfileVersion,
     Source,
 )
-from radar_vagas.profile.service import import_professional_profile
+from radar_vagas.profile.service import compare_job_to_profile, import_professional_profile
 from radar_vagas.web.app import create_app
 from radar_vagas.web.server import validate_bind_host
 
@@ -313,6 +317,277 @@ def test_web_bind_host_allows_only_loopback() -> None:
         raise AssertionError("host publico deveria ser rejeitado")
 
 
+def test_web_upload_does_not_persist_raw_file_and_manual_skill_is_not_evidence(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    upload_payload = b"""
+profile_name: Perfil Upload
+skills:
+  - name: SQL
+    evidence:
+      - title: Projeto SQL
+        evidence_type: PROJECT
+experiences: []
+projects: []
+education: []
+languages: []
+"""
+
+    with TestClient(create_app(settings)) as client:
+        onboarding = client.get("/onboarding")
+        token = _csrf(onboarding.text)
+        uploaded = client.post(
+            "/onboarding/profile/upload",
+            data={"csrf_token": token},
+            files={"file": ("profile.yaml", upload_payload, "text/yaml")},
+            follow_redirects=False,
+        )
+        assert uploaded.status_code == 303
+
+        profile = client.get("/profile")
+        token = _csrf(profile.text)
+        manual = client.post(
+            "/profile/manual",
+            data={
+                "csrf_token": token,
+                "profile_name": "Perfil Declarado",
+                "skills": "AWS\nDatabricks",
+            },
+            follow_redirects=False,
+        )
+        assert manual.status_code == 303
+
+    assert not list((tmp_path / "imports").glob("*"))
+    with session_scope(settings) as session:
+        versions = list(
+            session.scalars(
+                select(ProfessionalProfileVersion).order_by(ProfessionalProfileVersion.id)
+            )
+        )
+        assert len(versions) == 2
+        assert str(versions[0].source_path).startswith("upload:")
+        assert versions[1].source_path == "manual:web"
+        assert versions[1].evidences == []
+        job = _create_job(
+            session,
+            title="Estagio em Engenharia de Dados",
+            provider_identity_key="gupy:web-300",
+        )
+        job.requirements = "AWS e Databricks"
+        result = compare_job_to_profile(session, job.id)
+        assert all(
+            requirement.status is not RequirementMatchStatus.MATCHED
+            for requirement in result.requirements
+        )
+        assert result.overall_score < 100
+
+
+def test_web_job_filters_tabs_unshortlist_and_restore(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        active = _create_job(
+            session,
+            title="Vaga Ativa Dados",
+            provider_identity_key="gupy:web-401",
+        )
+        applied = _create_job(
+            session,
+            title="Vaga Aplicada Dados",
+            provider_identity_key="gupy:web-402",
+        )
+        dismissed = _create_job(
+            session,
+            title="Vaga Descartada Dados",
+            provider_identity_key="gupy:web-403",
+        )
+        closed = _create_job(
+            session,
+            title="Vaga Fechada Dados",
+            provider_identity_key="gupy:web-404",
+        )
+        applied.status = JobStatus.APPLIED
+        applied.review_state.state = ReviewState.APPLIED
+        dismissed.status = JobStatus.DISMISSED
+        dismissed.review_state.state = ReviewState.DISMISSED
+        closed.status = JobStatus.CLOSED
+        active_id = active.id
+        dismissed_id = dismissed.id
+
+    with TestClient(create_app(settings)) as client:
+        default_page = client.get("/jobs")
+        assert default_page.status_code == 200
+        assert "Vaga Ativa Dados" in default_page.text
+        assert "Vaga Aplicada Dados" not in default_page.text
+        assert "Vaga Descartada Dados" not in default_page.text
+        assert "Vaga Fechada Dados" not in default_page.text
+
+        filtered = client.get("/jobs?work_model=REMOTE&employment_type=INTERNSHIP&min_ranking=80")
+        assert filtered.status_code == 200
+        invalid = client.get("/jobs?status=NAO_EXISTE")
+        assert invalid.status_code == 400
+        assert "Filtro invalido" in invalid.text
+
+        detail = client.get(f"/jobs/{active_id}")
+        token = _csrf(detail.text)
+        assert (
+            client.post(
+                f"/jobs/{active_id}/shortlist",
+                data={"csrf_token": token},
+                follow_redirects=False,
+            ).status_code
+            == 303
+        )
+        favorite_tab = client.get("/jobs?tab=favoritas")
+        assert favorite_tab.status_code == 200
+        assert "Vaga Ativa Dados" in favorite_tab.text
+        token = _csrf(client.get(f"/jobs/{active_id}").text)
+        assert (
+            client.post(
+                f"/jobs/{active_id}/unshortlist",
+                data={"csrf_token": token},
+                follow_redirects=False,
+            ).status_code
+            == 303
+        )
+        token = _csrf(client.get(f"/jobs/{dismissed_id}").text)
+        restored = client.post(
+            f"/jobs/{dismissed_id}/restore",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert restored.status_code == 303
+
+    with session_scope(settings) as session:
+        assert session.get(Job, active_id).review_state.state is ReviewState.SEEN  # type: ignore[union-attr]
+        restored_job = session.get(Job, dismissed_id)
+        assert restored_job is not None
+        assert restored_job.review_state.state is ReviewState.UNREVIEWED
+
+
+def test_web_agenda_month_selects_and_meeting_url_validation(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        job = _create_job(session, provider_identity_key="gupy:web-501")
+        application = Application(
+            job_id=job.id,
+            application_key=application_key_for_job(job),
+            status=ApplicationStatus.SUBMITTED,
+            stage=ApplicationStage.APPLIED,
+        )
+        session.add(application)
+        session.flush()
+        job_id = job.id
+        application_id = application.id
+
+    with TestClient(create_app(settings)) as client:
+        agenda_page = client.get("/agenda?year=2026&month=7")
+        assert agenda_page.status_code == 200
+        assert "Seg" in agenda_page.text
+        assert "Sem data" in agenda_page.text
+        assert "Acme Dados" in agenda_page.text
+        token = _csrf(agenda_page.text)
+        invalid = client.post(
+            "/agenda/events",
+            data={
+                "csrf_token": token,
+                "event_type": CareerEventType.INTERVIEW.value,
+                "title": "Entrevista invalida",
+                "job_id": str(job_id),
+                "application_id": str(application_id),
+                "meeting_url": "https://localhost/meet",
+            },
+        )
+        assert invalid.status_code == 400
+        assert "host local" in invalid.text
+
+        valid = client.post(
+            "/agenda/events",
+            data={
+                "csrf_token": token,
+                "event_type": CareerEventType.INTERVIEW.value,
+                "title": "Entrevista valida",
+                "starts_at": "2026-07-21T10:00",
+                "job_id": str(job_id),
+                "application_id": str(application_id),
+                "meeting_url": "https://meet.example.com/sala",
+            },
+            follow_redirects=False,
+        )
+        assert valid.status_code == 303
+        undated = client.post(
+            "/agenda/events",
+            data={
+                "csrf_token": token,
+                "event_type": CareerEventType.FOLLOW_UP.value,
+                "title": "Follow-up sem data",
+            },
+            follow_redirects=False,
+        )
+        assert undated.status_code == 303
+        refreshed = client.get("/agenda?year=2026&month=7")
+        assert "Entrevista valida" in refreshed.text
+        assert "Follow-up sem data" in refreshed.text
+
+
+def test_web_collection_background_status_sanitizes_and_blocks_double_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    started = Event()
+    release = Event()
+    calls = 0
+
+    def fake_run_search_plan(*_args: object, **_kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        started.set()
+        release.wait(timeout=5)
+        raise RuntimeError(
+            "Traceback (most recent call last): https://example.com/jobs?token=abc "
+            "C:\\Users\\Islayder\\secret\\profile.yaml"
+        )
+
+    monkeypatch.setattr("radar_vagas.web.collection.run_search_plan", fake_run_search_plan)
+
+    with TestClient(create_app(settings)) as client:
+        sources = client.get("/sources")
+        token = _csrf(sources.text)
+        first = client.post(
+            "/sources/collect-search-plan",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert first.status_code == 303
+        assert started.wait(timeout=5)
+        running = client.get("/sources/collection-status").json()
+        assert running["state"] == "running"
+        second = client.post(
+            "/sources/collect-search-plan",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert second.status_code == 400
+        release.set()
+        final = _wait_for_collection_state(
+            lambda: client.get("/sources/collection-status").json(),
+            "failed",
+        )
+        assert calls == 1
+        assert "token=abc" not in final["message"]
+        assert "C:\\Users" not in final["message"]
+        assert "Traceback" not in final["message"]
+        assert "https://example.com/jobs" not in final["message"]
+        assert "Detalhes tecnicos omitidos" in final["message"]
+
+
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         database_url=f"sqlite:///{(tmp_path / 'radar.sqlite3').as_posix()}",
@@ -455,3 +730,16 @@ def _csrf(html: str) -> str:
     if match is None:
         raise AssertionError("token CSRF nao encontrado")
     return match.group(1)
+
+
+def _wait_for_collection_state(
+    status_provider: Callable[[], dict[str, object]],
+    expected: str,
+) -> dict[str, object]:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        status = status_provider()
+        if status.get("state") == expected:
+            return status
+        time.sleep(0.05)
+    raise AssertionError(f"coleta nao chegou ao estado {expected}")

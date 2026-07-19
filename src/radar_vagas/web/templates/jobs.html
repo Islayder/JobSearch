@@ -8,10 +8,30 @@
     </div>
   </section>
 
-  <form class="toolbar" method="get" action="/jobs">
+  <nav class="tabs" aria-label="Atalhos de vagas">
+    <a class="{% if not filters.tab %}active{% endif %}" href="/jobs">Todas ativas</a>
+    {% for key, text in tabs.items() %}
+      <a class="{% if filters.tab == key %}active{% endif %}" href="/jobs?tab={{ key }}">{{ text }}</a>
+    {% endfor %}
+  </nav>
+
+  <form class="toolbar filters" method="get" action="/jobs">
+    <input type="hidden" name="tab" value="{{ filters.tab }}">
     <div class="field">
       <label for="q">Busca</label>
-      <input id="q" name="q" value="{{ filters.q }}" placeholder="titulo ou empresa">
+      <input id="q" name="q" value="{{ filters.q }}" placeholder="titulo, texto ou empresa">
+    </div>
+    <div class="field">
+      <label for="company">Empresa</label>
+      <input id="company" name="company" value="{{ filters.company }}">
+    </div>
+    <div class="field">
+      <label for="city">Cidade</label>
+      <input id="city" name="city" value="{{ filters.city }}">
+    </div>
+    <div class="field compact">
+      <label for="state">UF</label>
+      <input id="state" name="state" value="{{ filters.state }}">
     </div>
     <div class="field">
       <label for="status">Estado</label>
@@ -32,13 +52,72 @@
       </select>
     </div>
     <div class="field">
-      <label for="sort">Ordenacao</label>
-      <select id="sort" name="sort">
-        <option value="score" {% if sort == "score" %}selected{% endif %}>Pontuacao</option>
-        <option value="newest" {% if sort == "newest" %}selected{% endif %}>Mais novas</option>
-        <option value="first-seen" {% if sort == "first-seen" %}selected{% endif %}>Primeiro achado</option>
+      <label for="employment_type">Tipo</label>
+      <select id="employment_type" name="employment_type">
+        <option value="">Todos</option>
+        {% for value, text in labels.employment_types.items() %}
+          <option value="{{ value.value }}" {% if filters.employment_type == value.value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
       </select>
     </div>
+    <div class="field">
+      <label for="work_model">Modelo</label>
+      <select id="work_model" name="work_model">
+        <option value="">Todos</option>
+        {% for value, text in labels.work_models.items() %}
+          <option value="{{ value.value }}" {% if filters.work_model == value.value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="provider">Plataforma</label>
+      <input id="provider" name="provider" value="{{ filters.provider }}" placeholder="gupy">
+    </div>
+    <div class="field">
+      <label for="eligibility">Elegibilidade</label>
+      <select id="eligibility" name="eligibility">
+        <option value="">Todas</option>
+        {% for value, text in eligibility_statuses.items() %}
+          <option value="{{ value.value }}" {% if filters.eligibility == value.value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="relevance">Relevancia</label>
+      <select id="relevance" name="relevance">
+        <option value="">Todas</option>
+        {% for value, text in relevance_statuses.items() %}
+          <option value="{{ value.value }}" {% if filters.relevance == value.value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field compact">
+      <label for="min_ranking">Ranking min.</label>
+      <input id="min_ranking" name="min_ranking" type="number" min="0" max="100" value="{{ filters.min_ranking }}">
+    </div>
+    <div class="field compact">
+      <label for="min_compatibility">Compat. min.</label>
+      <input id="min_compatibility" name="min_compatibility" type="number" min="0" max="100" value="{{ filters.min_compatibility }}">
+    </div>
+    <div class="field">
+      <label for="sort">Ordenacao</label>
+      <select id="sort" name="sort">
+        <option value="recommendation" {% if sort in ["recommendation", "score"] %}selected{% endif %}>Recomendacao</option>
+        <option value="compatibility" {% if sort == "compatibility" %}selected{% endif %}>Compatibilidade</option>
+        <option value="publication" {% if sort in ["publication", "newest"] %}selected{% endif %}>Publicacao</option>
+        <option value="first-seen" {% if sort == "first-seen" %}selected{% endif %}>Primeiro achado</option>
+        <option value="company" {% if sort == "company" %}selected{% endif %}>Empresa</option>
+        <option value="title" {% if sort == "title" %}selected{% endif %}>Titulo</option>
+      </select>
+    </div>
+    <label class="check">
+      <input name="only_with_compatibility" type="checkbox" {% if filters.only_with_compatibility %}checked{% endif %}>
+      Com compatibilidade
+    </label>
+    <label class="check">
+      <input name="only_without_compatibility" type="checkbox" {% if filters.only_without_compatibility %}checked{% endif %}>
+      Sem compatibilidade
+    </label>
     <button type="submit">Filtrar</button>
   </form>
 
@@ -50,22 +129,25 @@
           <th>Empresa</th>
           <th>Estado</th>
           <th>Modelo</th>
-          <th>Score</th>
+          <th>Ranking</th>
+          <th>Compat.</th>
           <th>Resumo</th>
         </tr>
       </thead>
       <tbody>
         {% for job in page.items %}
+          {% set latest_comparison = job.profile_comparisons|sort(attribute="created_at")|last %}
           <tr>
             <td><a href="/jobs/{{ job.id }}">{{ job.canonical_title }}</a></td>
             <td>{{ job.company.canonical_name }}</td>
             <td><span class="badge {{ job.status|status_class }}">{{ job.status|label }}</span></td>
             <td>{{ job.work_model|label }}</td>
             <td>{{ job.decision.ranking_score if job.decision and job.decision.ranking_score is not none else "-" }}</td>
+            <td>{{ latest_comparison.overall_score if latest_comparison else "-" }}</td>
             <td>{{ job.description|preview(140) }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="empty">Nenhuma vaga encontrada.</td></tr>
+          <tr><td colspan="7" class="empty">Nenhuma vaga encontrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -73,11 +155,11 @@
 
   <nav class="toolbar" aria-label="Paginacao">
     {% if page.has_previous %}
-      <a class="button secondary" href="/jobs?page={{ page.page - 1 }}&q={{ filters.q }}&status={{ filters.status }}&review={{ filters.review }}&sort={{ sort }}">Anterior</a>
+      <a class="button secondary" href="{{ request.url.include_query_params(page=page.page - 1) }}">Anterior</a>
     {% endif %}
     <span class="muted">Pagina {{ page.page }} de {{ page.pages }}</span>
     {% if page.has_next %}
-      <a class="button secondary" href="/jobs?page={{ page.page + 1 }}&q={{ filters.q }}&status={{ filters.status }}&review={{ filters.review }}&sort={{ sort }}">Proxima</a>
+      <a class="button secondary" href="{{ request.url.include_query_params(page=page.page + 1) }}">Proxima</a>
     {% endif %}
   </nav>
 {% endblock %}

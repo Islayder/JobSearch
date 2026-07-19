@@ -228,7 +228,7 @@ class ProfileImportResult:
     version_number: int
     content_hash: str
     created_version: bool
-    source_path: Path
+    source_path: Path | str | None
 
 
 @dataclass(frozen=True)
@@ -284,6 +284,78 @@ def import_professional_profile(
     raw_bytes = file_path.read_bytes()
     content_hash = sha256(raw_bytes).hexdigest()
     document = _load_profile_input(file_path, raw_bytes)
+    return _store_profile_document(
+        session,
+        document,
+        content_hash=content_hash,
+        source_path=file_path,
+        source_format=file_path.suffix.lower().lstrip(".") or "text",
+        profile_name=profile_name,
+        activate=activate,
+        activation_source="import_profile",
+    )
+
+
+def import_professional_profile_bytes(
+    session: Session,
+    content: bytes,
+    *,
+    filename: str,
+    profile_name: str | None = None,
+    activate: bool = True,
+) -> ProfileImportResult:
+    content_hash = sha256(content).hexdigest()
+    document = _load_profile_input_from_name(filename, content)
+    sanitized_name = _safe_source_name(filename)
+    source_format = _source_format_from_name(filename)
+    return _store_profile_document(
+        session,
+        document,
+        content_hash=content_hash,
+        source_path=f"upload:{sanitized_name}",
+        source_format=source_format,
+        profile_name=profile_name,
+        activate=activate,
+        activation_source="upload_profile",
+    )
+
+
+def create_professional_profile(
+    session: Session,
+    document: ProfessionalProfileInput,
+    *,
+    profile_name: str | None = None,
+    activate: bool = True,
+    source_label: str = "manual:web",
+) -> ProfileImportResult:
+    raw_bytes = json.dumps(
+        document.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode("utf-8")
+    return _store_profile_document(
+        session,
+        document,
+        content_hash=sha256(raw_bytes).hexdigest(),
+        source_path=source_label,
+        source_format="manual",
+        profile_name=profile_name,
+        activate=activate,
+        activation_source="manual_profile",
+    )
+
+
+def _store_profile_document(
+    session: Session,
+    document: ProfessionalProfileInput,
+    *,
+    content_hash: str,
+    source_path: Path | str | None,
+    source_format: str,
+    profile_name: str | None,
+    activate: bool,
+    activation_source: str,
+) -> ProfileImportResult:
     effective_name = profile_name or document.profile_name
     normalized_name = normalize_text(effective_name)
     if not normalized_name:
@@ -309,7 +381,7 @@ def import_professional_profile(
     )
     if existing is not None:
         if activate:
-            activate_profile_version(session, existing.id, source="import_profile")
+            activate_profile_version(session, existing.id, source=activation_source)
         return ProfileImportResult(
             profile_id=profile.id,
             profile_version_id=existing.id,
@@ -317,7 +389,7 @@ def import_professional_profile(
             version_number=existing.version_number,
             content_hash=content_hash,
             created_version=False,
-            source_path=file_path,
+            source_path=source_path,
         )
 
     version_number = _next_version_number(session, profile.id)
@@ -330,8 +402,8 @@ def import_professional_profile(
     version = ProfessionalProfileVersion(
         profile_id=profile.id,
         version_number=version_number,
-        source_path=str(file_path),
-        source_format=file_path.suffix.lower().lstrip(".") or "text",
+        source_path=str(source_path) if source_path is not None else None,
+        source_format=source_format,
         content_hash=content_hash,
         profile_hash=sha256(raw_profile_json.encode("utf-8")).hexdigest(),
         headline=document.headline,
@@ -343,9 +415,9 @@ def import_professional_profile(
     session.add(version)
     session.flush()
     _store_profile_sections(session, version, document)
-    _store_resume_version(session, version, effective_name, file_path, content_hash)
+    _store_resume_version(session, version, effective_name, source_path, content_hash)
     if activate:
-        activate_profile_version(session, version.id, source="import_profile")
+        activate_profile_version(session, version.id, source=activation_source)
     session.flush()
     return ProfileImportResult(
         profile_id=profile.id,
@@ -354,7 +426,7 @@ def import_professional_profile(
         version_number=version.version_number,
         content_hash=content_hash,
         created_version=True,
-        source_path=file_path,
+        source_path=source_path,
     )
 
 
@@ -763,7 +835,11 @@ def evaluate_requirement(
 
 
 def _load_profile_input(file_path: Path, raw_bytes: bytes) -> ProfessionalProfileInput:
-    suffix = file_path.suffix.lower()
+    return _load_profile_input_from_name(file_path.name, raw_bytes)
+
+
+def _load_profile_input_from_name(filename: str, raw_bytes: bytes) -> ProfessionalProfileInput:
+    suffix = Path(filename).suffix.lower()
     if suffix in {".yaml", ".yml"}:
         loaded = yaml.safe_load(raw_bytes.decode("utf-8")) or {}
     elif suffix == ".json":
@@ -920,9 +996,10 @@ def _store_resume_version(
     session: Session,
     profile_version: ProfessionalProfileVersion,
     profile_name: str,
-    file_path: Path,
+    source_path: Path | str | None,
     content_hash: str,
 ) -> None:
+    stored_source = str(source_path) if source_path is not None else None
     resume = session.scalar(
         select(Resume).where(
             Resume.profile_id == profile_version.profile_id,
@@ -934,14 +1011,14 @@ def _store_resume_version(
             profile_id=profile_version.profile_id,
             name=f"Curriculo base - {profile_name}",
             is_base=True,
-            source_path=str(file_path),
+            source_path=stored_source,
             content_hash=content_hash,
             created_at=utc_now(),
         )
         session.add(resume)
         session.flush()
     else:
-        resume.source_path = str(file_path)
+        resume.source_path = stored_source
         resume.content_hash = content_hash
     existing_version = session.scalar(
         select(ResumeVersion).where(ResumeVersion.profile_version_id == profile_version.id)
@@ -952,7 +1029,7 @@ def _store_resume_version(
         ResumeVersion(
             resume_id=resume.id,
             profile_version_id=profile_version.id,
-            file_path=str(file_path),
+            file_path=stored_source,
             change_summary=(
                 f"Importacao estruturada do perfil versao {profile_version.version_number}."
             ),
@@ -968,6 +1045,15 @@ def _next_version_number(session: Session, profile_id: int) -> int:
         )
     )
     return int(current or 0) + 1
+
+
+def _source_format_from_name(filename: str) -> str:
+    return Path(filename).suffix.lower().lstrip(".") or "text"
+
+
+def _safe_source_name(filename: str) -> str:
+    name = Path(filename).name.strip() or "profile.txt"
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", name)[:120] or "profile.txt"
 
 
 def _profile_data(profile_version: ProfessionalProfileVersion) -> dict[str, Any]:

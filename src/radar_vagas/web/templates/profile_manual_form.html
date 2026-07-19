@@ -1,0 +1,89 @@
+<form class="card" action="{{ manual_profile_action|default('/profile/manual') }}" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if show_timezone %}
+    <div class="field">
+      <label for="manual_timezone">Timezone local</label>
+      <input id="manual_timezone" name="timezone" value="{{ ui.timezone }}">
+    </div>
+  {% endif %}
+  <h2>Criar perfil manual</h2>
+  <p class="muted">{{ evidence_hint }}</p>
+  <div class="field">
+    <label for="profile_name">Nome</label>
+    <input id="profile_name" name="profile_name" value="{{ default_profile_name|default('') }}" required>
+  </div>
+  <div class="field">
+    <label for="headline">Titulo</label>
+    <input id="headline" name="headline">
+  </div>
+  <div class="field">
+    <label for="summary">Resumo</label>
+    <textarea id="summary" name="summary"></textarea>
+  </div>
+  <div class="field">
+    <label for="skills">Habilidades declaradas</label>
+    <textarea id="skills" name="skills" placeholder="SQL&#10;Python&#10;Power BI">{{ default_skills|default('') }}</textarea>
+  </div>
+
+  <h3>Habilidades com evidencia explicita</h3>
+  <div data-repeat-list="skill">
+    <div class="repeat-row">
+      <input name="skill_name" placeholder="Habilidade">
+      <input name="skill_category" placeholder="Categoria">
+      <input name="skill_level" placeholder="Nivel">
+      <input name="skill_evidence_title" placeholder="Evidencia opcional">
+      <input name="skill_evidence_source" placeholder="Fonte opcional">
+    </div>
+  </div>
+  <button class="secondary" type="button" data-repeat-add="skill">Adicionar habilidade</button>
+
+  <h3>Experiencias</h3>
+  <div data-repeat-list="experience">
+    <div class="repeat-row">
+      <input name="experience_title" placeholder="Cargo ou atividade">
+      <input name="experience_organization" placeholder="Organizacao">
+      <input name="experience_start_date" placeholder="Inicio">
+      <input name="experience_end_date" placeholder="Fim">
+      <input name="experience_skills" placeholder="Skills usadas">
+      <textarea name="experience_description" placeholder="Descricao"></textarea>
+    </div>
+  </div>
+  <button class="secondary" type="button" data-repeat-add="experience">Adicionar experiencia</button>
+
+  <h3>Projetos</h3>
+  <div data-repeat-list="project">
+    <div class="repeat-row">
+      <input name="project_name" placeholder="Projeto">
+      <input name="project_technologies" placeholder="Tecnologias">
+      <input name="project_source_ref" placeholder="Link ou referencia">
+      <textarea name="project_description" placeholder="Descricao"></textarea>
+    </div>
+  </div>
+  <button class="secondary" type="button" data-repeat-add="project">Adicionar projeto</button>
+
+  <h3>Formacao</h3>
+  <div data-repeat-list="education">
+    <div class="repeat-row">
+      <input name="education_institution" placeholder="Instituicao">
+      <input name="education_course" placeholder="Curso">
+      <input name="education_status" placeholder="Status">
+      <input name="education_start_date" placeholder="Inicio">
+      <input name="education_end_date" placeholder="Fim">
+    </div>
+  </div>
+  <button class="secondary" type="button" data-repeat-add="education">Adicionar formacao</button>
+
+  <h3>Idiomas</h3>
+  <div data-repeat-list="language">
+    <div class="repeat-row">
+      <input name="language_name" placeholder="Idioma">
+      <input name="language_level" placeholder="Nivel">
+      <input name="language_evidence" placeholder="Evidencia opcional">
+    </div>
+  </div>
+  <button class="secondary" type="button" data-repeat-add="language">Adicionar idioma</button>
+
+  <div class="actions form-actions">
+    <button type="submit">Criar perfil</button>
+  </div>
+</form>

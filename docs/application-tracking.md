@@ -27,6 +27,11 @@ radar show-application 1
 
 `show-application` mostra os eventos locais e a etapa atual do processo.
 
+A interface web permite filtrar candidaturas por empresa, status, etapa,
+plataforma, periodo e atalhos operacionais: aguardando retorno, teste/case,
+entrevista, oferta, rejeitadas e retiradas. O detalhe mostra dados da vaga,
+timeline, agenda ligada, notas e pagina oficial quando houver URL segura.
+
 ## Eventos
 
 ```powershell
@@ -57,6 +62,12 @@ exemplo:
 - `REJECTED` move para `REJECTED`
 - `OFFER_RECEIVED` move para `OFFER_RECEIVED`
 - `WITHDRAWN` move para `WITHDRAWN`
+
+Na web, os botoes principais seguem o fluxo: confirmacao recebida, teste
+recebido/concluido, case recebido/enviado, entrevista marcada/concluida,
+atualizacao, rejeicao, oferta e retirada. Rejeicao, oferta e retirada exigem
+confirmacao explicita porque sao eventos terminais. A etapa visivel continua
+sendo derivada pela timeline, nao editada manualmente.
 
 Eventos informativos, como `CONFIRMATION_RECEIVED` e `PROCESS_UPDATE`, nao
 regridem uma candidatura que ja chegou a etapa mais avancada. Um evento antigo

@@ -97,6 +97,11 @@ comparacao vaga-curriculo preserva a versao usada na analise e diferencia
 `MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` e `AMBIGUOUS`, separando
 requisitos obrigatorios de desejaveis.
 
+Habilidade declarada sem evidencia nao comprova dominio. Nivel declarado sem
+evidencia tambem nao gera `MATCHED`. A web deve permitir criacao manual completa
+do perfil, mas so registra evidencia quando o usuario informa evidencia direta
+ou quando experiencia/projeto/formacao/idioma sustentam a habilidade.
+
 Comparacoes sao historicas. A mesma vaga com a mesma versao de perfil, mesma
 versao de regras e mesmo hash de conteudo retorna o resultado existente; quando
 algum desses elementos muda, uma nova comparacao e criada.
@@ -119,3 +124,14 @@ agenda, perfil e saude das fontes.
 A interface nao coleta automaticamente ao abrir, nao calcula compatibilidade em
 GET e nao executa candidatura. Coleta manual e comparacao em lote exigem acao
 explicita do usuario e reutilizam os mesmos servicos de dominio da CLI.
+
+A lista de vagas deve oferecer abas e filtros por texto, estado da vaga,
+revisao, tipo, modelo, plataforma, elegibilidade, relevancia, ranking,
+compatibilidade, empresa, cidade e UF. A lista padrao exclui aplicadas,
+descartadas, fechadas e expiradas. O detalhe mostra a compatibilidade explicavel
+e acoes condicionadas ao estado atual.
+
+O dashboard deve destacar novas, nao revisadas, recomendadas, favoritas,
+candidaturas ativas, retornos pendentes, testes/cases, entrevistas, ofertas,
+compromissos proximos e fontes em atencao. A agenda web usa calendario mensal
+local, sem integracao externa.
