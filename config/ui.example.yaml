@@ -1,0 +1,6 @@
+timezone: America/Sao_Paulo
+page_size: 25
+auto_open_browser: true
+default_job_sort: score
+default_job_filters: {}
+theme_preference: system

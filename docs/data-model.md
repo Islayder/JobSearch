@@ -176,9 +176,11 @@ entidade base `Resume` e reutilizada por perfil; novas importacoes criam novas
 `JobProfileComparison` guarda a comparacao entre uma vaga e uma versao de
 perfil. `JobRequirementMatch` guarda cada requisito como obrigatorio ou
 desejavel, com status `MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` ou
-`AMBIGUOUS`, evidencias e explicacao. A identidade da comparacao usa vaga,
-versao do perfil, versao das regras e hash do conteudo da vaga, preservando
-historico quando a vaga ou as regras mudam.
+`AMBIGUOUS`, evidencias e explicacao. Tambem guarda origem do requisito, texto
+original, termos avaliados e resultado por termo em JSON para auditoria
+detalhada. A identidade da comparacao usa vaga, versao do perfil, versao das
+regras e hash do conteudo da vaga, preservando historico quando a vaga ou as
+regras mudam.
 
 `CareerEvent` guarda agenda local de prazos, entrevistas, testes, cases,
 documentos, ofertas e follow-ups. Ele pode apontar para uma vaga, uma

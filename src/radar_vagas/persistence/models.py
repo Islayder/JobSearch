@@ -860,6 +860,10 @@ class JobRequirementMatch(Base):
     evidence_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     weight: Mapped[int] = mapped_column(Integer, nullable=False)
+    requirement_source: Mapped[str | None] = mapped_column(String(120))
+    original_text: Mapped[str | None] = mapped_column(Text)
+    terms_json: Mapped[str | None] = mapped_column(Text)
+    term_results_json: Mapped[str | None] = mapped_column(Text)
 
     comparison: Mapped[JobProfileComparison] = relationship(back_populates="requirement_matches")
 

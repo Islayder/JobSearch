@@ -14,6 +14,7 @@ from radar_vagas.config.schemas import (
     RankingWeightsConfig,
     RelevanceRulesConfig,
     SearchQueriesConfig,
+    UiConfig,
 )
 
 
@@ -57,6 +58,31 @@ def load_network_config(config_dir: Path) -> NetworkConfig:
     if not path.exists():
         return NetworkConfig()
     return NetworkConfig.model_validate(_load_yaml(path))
+
+
+def load_ui_config(config_dir: Path) -> UiConfig:
+    preferred = config_dir / "ui.local.yaml"
+    fallback = config_dir / "ui.yaml"
+    example = config_dir / "ui.example.yaml"
+    for path in (preferred, fallback, example):
+        if path.exists():
+            return UiConfig.model_validate(_load_yaml(path))
+    return UiConfig()
+
+
+def write_ui_local_config(config_dir: Path, config: UiConfig) -> Path:
+    config_dir.mkdir(parents=True, exist_ok=True)
+    path = config_dir / "ui.local.yaml"
+    payload = {
+        "timezone": config.timezone,
+        "page_size": config.page_size,
+        "auto_open_browser": config.auto_open_browser,
+        "default_job_sort": config.default_job_sort,
+        "default_job_filters": config.default_job_filters,
+        "theme_preference": config.theme_preference,
+    }
+    path.write_text(yaml.safe_dump(payload, sort_keys=True, allow_unicode=False), encoding="utf-8")
+    return path
 
 
 def load_company_boards(config_dir: Path) -> CompanyBoardsConfig:

@@ -21,6 +21,7 @@ O `.gitignore` cobre:
 - curriculos e resumes por padrao de nome;
 - `config/profile.local.yaml`;
 - `config/professional_profile.local.yaml`;
+- `config/ui.local.yaml`;
 - demais `config/*.local.yaml` sensiveis;
 - credenciais e tokens locais.
 
@@ -43,6 +44,17 @@ validacao nao faz consulta de rede.
 
 Notas da agenda e das candidaturas podem conter contexto pessoal. Elas ficam no
 banco SQLite local e nos relatorios locais ignorados pelo Git.
+
+## Interface Web Local
+
+A interface web roda por padrao em `127.0.0.1` e nao deve ser publicada em rede.
+Ela usa cookies locais com `SameSite=Strict`, protecao CSRF em acoes mutaveis,
+cabecalhos de seguranca e validacao de upload. GETs nao alteram dados.
+
+Arquivos importados pela interface aceitam apenas YAML, YML, JSON ou TXT
+estruturado. PDF e DOCX nao sao analisados nesta etapa. A interface nao busca
+URLs externas pelo servidor, nao faz login, nao envia curriculo e nao preenche
+formularios.
 
 ## Exportacoes
 

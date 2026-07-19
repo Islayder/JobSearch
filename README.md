@@ -36,6 +36,16 @@ Tambem e possivel executar sem depender do script de console:
 .\.venv\Scripts\python.exe -m radar_vagas --help
 ```
 
+Para usar a interface web local, instale tambem o extra `web`:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,web]"
+radar web
+```
+
+A URL padrao e `http://127.0.0.1:8000`. Use `radar web --no-open-browser`
+quando quiser iniciar sem abrir o navegador.
+
 ## Fluxo Local
 
 Inicialize o banco:
@@ -146,6 +156,13 @@ radar complete-agenda-event 1
 radar cancel-agenda-event 1
 ```
 
+Abra a interface web local:
+
+```powershell
+radar web
+radar web --port 8001 --no-open-browser
+```
+
 ## Marco 4.1
 
 O pipeline de descoberta Gupy usa a mesma entrada canonica de relevancia no
@@ -226,6 +243,8 @@ ignorados.
 - `docs/application-tracking.md`
 - `docs/application-history-import.md`
 - `docs/calendar.md`
+- `docs/web-interface.md`
+- `docs/local-setup.md`
 - `docs/privacy-policy.md`
 - `docs/collector-development-playbook.md`
 
@@ -236,10 +255,11 @@ JobPosting, Greenhouse, Lever e Gupy Public Portal, deduplicacao deterministica,
 avaliacao de elegibilidade, relevancia profissional, ranking explicavel,
 auditoria de importacao/coleta, fila de revisao, acompanhamento manual de
 candidaturas, importacao de historico local, perfil profissional versionado,
-comparacao explicavel entre vaga e curriculo e agenda local.
+comparacao explicavel entre vaga e curriculo, agenda local e interface web
+local.
 Boards persistidos sao isolados por escopo estavel de coletor e key/token/URL;
 o nome da empresa e apenas informacao auxiliar de exibicao.
 
 Pandape, Solides, LinkedIn, Indeed, crawling recursivo, IA, geracao de
-curriculo por IA, Gmail, Google Calendar, Playwright, formularios e candidatura
-automatica ficam fora desta etapa.
+curriculo por IA, Gmail, Google Calendar, Playwright, interface publica,
+formularios e candidatura automatica ficam fora desta etapa.

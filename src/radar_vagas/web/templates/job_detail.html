@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ job.canonical_title }} - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>{{ job.canonical_title }}</h1>
+      <p>{{ job.company.canonical_name }} · {{ job.work_model|label }} · {{ job.employment_type|label }}</p>
+    </div>
+    <div class="actions">
+      {% if application_url %}
+        <a class="button" href="{{ application_url }}" target="_blank" rel="noopener noreferrer">Pagina oficial</a>
+      {% endif %}
+      <a class="button secondary" href="/jobs">Voltar</a>
+    </div>
+  </section>
+
+  <section class="detail">
+    <article class="card">
+      <h2>Descricao</h2>
+      <p>{{ job.description }}</p>
+      {% if job.requirements %}
+        <h3>Requisitos</h3>
+        <p>{{ job.requirements }}</p>
+      {% endif %}
+      {% if job.responsibilities %}
+        <h3>Responsabilidades</h3>
+        <p>{{ job.responsibilities }}</p>
+      {% endif %}
+      {% if job.technologies_json|json_list %}
+        <h3>Tecnologias</h3>
+        <p>
+          {% for tech in job.technologies_json|json_list %}
+            <span class="badge">{{ tech }}</span>
+          {% endfor %}
+        </p>
+      {% endif %}
+    </article>
+
+    <aside class="card">
+      <h2>Status</h2>
+      <p><span class="badge {{ job.status|status_class }}">{{ job.status|label }}</span></p>
+      <p>Revisao: {{ review_state|label }}</p>
+      {% if job.decision %}
+        <p>Elegibilidade: {{ job.decision.eligibility_status|label }}</p>
+        <p>Ranking: {{ job.decision.ranking_score if job.decision.ranking_score is not none else "-" }}</p>
+        <p>Relevancia: {{ job.decision.relevance_status|label }}</p>
+      {% endif %}
+      <div class="actions">
+        <form class="inline" action="/jobs/{{ job.id }}/seen" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="secondary" type="submit">Vista</button>
+        </form>
+        <form class="inline" action="/jobs/{{ job.id }}/shortlist" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="secondary" type="submit">Favoritar</button>
+        </form>
+        <form class="inline" action="/jobs/{{ job.id }}/compare" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="secondary" type="submit">Comparar</button>
+        </form>
+      </div>
+    </aside>
+  </section>
+
+  <section class="grid">
+    <form class="card" action="/jobs/{{ job.id }}/dismiss" method="post" data-confirm="Descartar esta vaga?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Descartar</h2>
+      <div class="field">
+        <label for="reason_code">Motivo</label>
+        <select id="reason_code" name="reason_code">
+          {% for value, text in dismiss_reasons %}
+            <option value="{{ value }}">{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="dismiss_notes">Notas</label>
+        <textarea id="dismiss_notes" name="notes"></textarea>
+      </div>
+      <button class="danger" type="submit">Descartar</button>
+    </form>
+
+    <form class="card" action="/jobs/{{ job.id }}/apply" method="post" data-confirm="Registrar candidatura manual?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Registrar candidatura</h2>
+      <div class="field">
+        <label for="applied_at">Data/hora</label>
+        <input id="applied_at" name="applied_at" type="datetime-local">
+      </div>
+      <div class="field">
+        <label for="platform">Plataforma</label>
+        <input id="platform" name="platform" placeholder="gupy">
+      </div>
+      <div class="field">
+        <label for="external_reference">Referencia</label>
+        <input id="external_reference" name="external_reference">
+      </div>
+      <div class="field">
+        <label for="apply_notes">Notas</label>
+        <textarea id="apply_notes" name="notes"></textarea>
+      </div>
+      <button type="submit">Registrar</button>
+    </form>
+  </section>
+
+  <section class="grid">
+    <form class="card" action="/jobs/{{ job.id }}/events" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Novo evento</h2>
+      <div class="field">
+        <label for="event_type">Tipo</label>
+        <select id="event_type" name="event_type">
+          {% for value, text in event_types.items() %}
+            <option value="{{ value.value }}">{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="title">Titulo</label>
+        <input id="title" name="title" required>
+      </div>
+      <div class="field">
+        <label for="starts_at">Inicio</label>
+        <input id="starts_at" name="starts_at" type="datetime-local">
+      </div>
+      <div class="field">
+        <label for="ends_at">Fim</label>
+        <input id="ends_at" name="ends_at" type="datetime-local">
+      </div>
+      <div class="field">
+        <label for="event_notes">Notas</label>
+        <textarea id="event_notes" name="notes"></textarea>
+      </div>
+      <button type="submit">Adicionar</button>
+    </form>
+
+    <div class="card">
+      <h2>Compatibilidade</h2>
+      {% if comparison %}
+        <p><strong>{{ comparison.overall_score }}/100</strong></p>
+        <p>{{ comparison.summary }}</p>
+        <div class="list">
+          {% for match in comparison.requirement_matches %}
+            <div class="row">
+              <span class="badge {{ match.match_status|status_class }}">{{ match.match_status|label }}</span>
+              <strong>{{ match.requirement_text }}</strong>
+              <div class="muted">{{ match.explanation }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty">Nenhuma comparacao calculada.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Candidaturas</h2>
+      <div class="list">
+        {% for application in job.applications %}
+          <div class="row">
+            <a href="/applications/{{ application.id }}">Candidatura {{ application.id }}</a>
+            <div class="muted">{{ application.status|label }} · {{ application.stage|label }}</div>
+          </div>
+        {% else %}
+          <p class="empty">Nenhuma candidatura registrada.</p>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <h2>Agenda da vaga</h2>
+      <div class="list">
+        {% for event in job.career_events %}
+          <div class="row">
+            <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
+            <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
+          </div>
+        {% else %}
+          <p class="empty">Nenhum evento.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+{% endblock %}

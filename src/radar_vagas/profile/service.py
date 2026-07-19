@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from radar_vagas.canonicalization.normalize import normalize_text
 from radar_vagas.domain.enums import (
     EmploymentType,
+    JobStatus,
     ProfileEvidenceType,
     RequirementKind,
     RequirementMatchStatus,
@@ -246,6 +247,7 @@ class RequirementEvaluation:
     evidence: list[dict[str, str]]
     explanation: str
     weight: int
+    term_results: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -257,6 +259,17 @@ class ProfileComparisonResult:
     summary: str
     attention_points: list[str]
     requirements: list[RequirementEvaluation]
+
+
+@dataclass(frozen=True)
+class BatchProfileComparisonResult:
+    requested: int
+    created: int
+    reused: int
+    skipped: int
+    failed: int
+    errors: list[str]
+    comparison_ids: list[int]
 
 
 def import_professional_profile(
@@ -437,15 +450,6 @@ def compare_job_to_profile(
     if profile_version is None:
         raise RadarError(f"Versao de perfil nao encontrada: {profile_version_id}")
 
-    profile_data = _profile_data(profile_version)
-    requirements = extract_requirements(job)
-    evaluations = [
-        evaluate_requirement(requirement, profile_data, job.employment_type)
-        for requirement in requirements
-    ]
-    score, breakdown = _score(evaluations)
-    attention_points = _attention_points(evaluations)
-    summary = _summary(score, evaluations)
     job_content_hash = _job_content_hash(job)
     comparison = session.scalar(
         select(JobProfileComparison).where(
@@ -458,6 +462,15 @@ def compare_job_to_profile(
     if comparison is not None:
         return _comparison_result_from_model(comparison)
 
+    profile_data = _profile_data(profile_version)
+    requirements = extract_requirements(job)
+    evaluations = [
+        evaluate_requirement(requirement, profile_data, job.employment_type)
+        for requirement in requirements
+    ]
+    score, breakdown = _score(evaluations)
+    attention_points = _attention_points(evaluations)
+    summary = _summary(score, evaluations)
     comparison = JobProfileComparison(
         job_id=job.id,
         profile_version_id=profile_version.id,
@@ -486,6 +499,18 @@ def compare_job_to_profile(
                 evidence_json=json.dumps(item.evidence, ensure_ascii=False, sort_keys=True),
                 explanation=item.explanation,
                 weight=item.weight,
+                requirement_source=item.requirement.source,
+                original_text=item.requirement.original_text,
+                terms_json=json.dumps(
+                    list(item.requirement.terms),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                term_results_json=json.dumps(
+                    item.term_results,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
             )
         )
     session.flush()
@@ -511,6 +536,75 @@ def latest_comparison_for_job(
     )
 
 
+def compare_active_jobs_to_profile(
+    session: Session,
+    *,
+    limit: int = 50,
+) -> BatchProfileComparisonResult:
+    if limit <= 0:
+        raise RadarError("limit deve ser um inteiro positivo.")
+    profile_version = get_active_profile_version(session)
+    statement = (
+        select(Job)
+        .where(
+            Job.status.in_([JobStatus.ELIGIBLE, JobStatus.RECOMMENDED, JobStatus.PENDING_REVIEW])
+        )
+        .order_by(Job.updated_at.desc(), Job.id.desc())
+        .limit(limit)
+    )
+    jobs = list(session.scalars(statement).all())
+    created = 0
+    reused = 0
+    skipped = 0
+    failed = 0
+    errors: list[str] = []
+    comparison_ids: list[int] = []
+    for job in jobs:
+        try:
+            existing = _existing_comparison_for_identity(session, job, profile_version.id)
+            if existing is not None:
+                reused += 1
+                comparison_ids.append(existing.id)
+                continue
+            result = compare_job_to_profile(
+                session,
+                job.id,
+                profile_version_id=profile_version.id,
+            )
+            created += 1
+            comparison_ids.append(result.comparison_id)
+        except RadarError as exc:
+            failed += 1
+            errors.append(f"vaga {job.id}: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive boundary for UI reporting
+            failed += 1
+            errors.append(f"vaga {job.id}: falha inesperada: {exc}")
+    return BatchProfileComparisonResult(
+        requested=len(jobs),
+        created=created,
+        reused=reused,
+        skipped=skipped,
+        failed=failed,
+        errors=errors,
+        comparison_ids=comparison_ids,
+    )
+
+
+def _existing_comparison_for_identity(
+    session: Session,
+    job: Job,
+    profile_version_id: int,
+) -> JobProfileComparison | None:
+    return session.scalar(
+        select(JobProfileComparison).where(
+            JobProfileComparison.job_id == job.id,
+            JobProfileComparison.profile_version_id == profile_version_id,
+            JobProfileComparison.rules_version == PROFILE_RULES_VERSION,
+            JobProfileComparison.job_content_hash == _job_content_hash(job),
+        )
+    )
+
+
 def _comparison_result_from_model(comparison: JobProfileComparison) -> ProfileComparisonResult:
     return ProfileComparisonResult(
         comparison_id=comparison.id,
@@ -527,6 +621,11 @@ def _comparison_result_from_model(comparison: JobProfileComparison) -> ProfileCo
                 requirement=RequirementCandidate(
                     text=match.requirement_text,
                     kind=match.requirement_kind,
+                    terms=tuple(
+                        str(item) for item in _safe_json_loads(match.terms_json, expected_type=list)
+                    ),
+                    source=match.requirement_source or "legacy",
+                    original_text=match.original_text,
                 ),
                 status=match.match_status,
                 evidence=[
@@ -536,6 +635,11 @@ def _comparison_result_from_model(comparison: JobProfileComparison) -> ProfileCo
                 ],
                 explanation=match.explanation,
                 weight=match.weight,
+                term_results=[
+                    item
+                    for item in _safe_json_loads(match.term_results_json, expected_type=list)
+                    if isinstance(item, dict)
+                ],
             )
             for match in comparison.requirement_matches
         ],
@@ -1098,11 +1202,14 @@ def _technical_requirement(
     weight: int,
     terms: tuple[str, ...],
 ) -> RequirementEvaluation:
-    term_results = [_evaluate_technical_term(term, requirement, profile_data) for term in terms]
+    term_results = [
+        _evaluate_technical_term(term, requirement, profile_data, terms=terms) for term in terms
+    ]
     evidence = [item for result in term_results for item in result["evidence"]]
     matched_count = sum(1 for result in term_results if result["status"] == "matched")
     partial_count = sum(1 for result in term_results if result["status"] == "partial")
     not_proven_count = sum(1 for result in term_results if result["status"] == "not_proven")
+    ambiguous_count = sum(1 for result in term_results if result["status"] == "ambiguous")
 
     if matched_count == len(term_results):
         status = RequirementMatchStatus.MATCHED
@@ -1120,6 +1227,9 @@ def _technical_requirement(
             if requirement.kind is RequirementKind.UNKNOWN
             else "Nenhum termo tecnico do requisito foi comprovado no perfil estruturado."
         )
+    if ambiguous_count and status is not RequirementMatchStatus.PARTIAL:
+        status = RequirementMatchStatus.AMBIGUOUS
+        explanation = "Nivel do requisito composto nao ficou seguro para todos os termos."
     if not_proven_count and status is RequirementMatchStatus.MATCHED:
         status = RequirementMatchStatus.PARTIAL
     return RequirementEvaluation(
@@ -1128,6 +1238,7 @@ def _technical_requirement(
         evidence=evidence,
         explanation=explanation,
         weight=weight,
+        term_results=term_results,
     )
 
 
@@ -1135,9 +1246,10 @@ def _evaluate_technical_term(
     term: str,
     requirement: RequirementCandidate,
     profile_data: dict[str, Any],
+    *,
+    terms: tuple[str, ...],
 ) -> dict[str, Any]:
-    normalized_requirement = normalize_text(requirement.text)
-    required_level = _required_level(normalized_requirement)
+    required_level, level_ambiguous = _required_level_for_term(requirement.text, term, terms)
     matching_skills = _matching_skills(term, profile_data["skills"])
     if matching_skills:
         evidences = _evidence_for_skills(matching_skills, profile_data)
@@ -1147,6 +1259,17 @@ def _evaluate_technical_term(
                 "status": "not_proven",
                 "evidence": [{"term": term, "skill": str(matching_skills[0]["name"])}],
                 "explanation": "habilidade citada sem evidencia estruturada.",
+                "required_level": _level_label(required_level),
+                "level_ambiguous": level_ambiguous,
+            }
+        if level_ambiguous:
+            return {
+                "term": term,
+                "status": "ambiguous",
+                "evidence": evidences,
+                "explanation": "nivel citado no requisito composto nao foi ligado com seguranca.",
+                "required_level": None,
+                "level_ambiguous": True,
             }
         status, explanation = _skill_status_for_level(matching_skills[0], required_level)
         return {
@@ -1154,16 +1277,29 @@ def _evaluate_technical_term(
             "status": _term_status_name(status),
             "evidence": evidences,
             "explanation": explanation,
+            "required_level": _level_label(required_level),
+            "level_ambiguous": False,
         }
 
     project_evidence = _project_evidence_for_term(term, profile_data)
     experience_evidence = _experience_evidence_for_term(term, profile_data)
     if project_evidence or experience_evidence:
+        if level_ambiguous:
+            return {
+                "term": term,
+                "status": "ambiguous",
+                "evidence": [*project_evidence, *experience_evidence],
+                "explanation": "nivel citado no requisito composto nao foi ligado com seguranca.",
+                "required_level": None,
+                "level_ambiguous": True,
+            }
         return {
             "term": term,
             "status": "matched" if required_level is None else "partial",
             "evidence": [*project_evidence, *experience_evidence],
             "explanation": "termo comprovado por projeto ou experiencia.",
+            "required_level": _level_label(required_level),
+            "level_ambiguous": False,
         }
 
     adjacent = _adjacent_skills(term, profile_data["skills"])
@@ -1174,8 +1310,26 @@ def _evaluate_technical_term(
             "evidence": _evidence_for_skills(adjacent, profile_data)
             or [{"term": term, "skill": str(skill["name"])} for skill in adjacent],
             "explanation": "competencia adjacente encontrada.",
+            "required_level": _level_label(required_level),
+            "level_ambiguous": level_ambiguous,
         }
-    return {"term": term, "status": "not_proven", "evidence": [], "explanation": ""}
+    if level_ambiguous:
+        return {
+            "term": term,
+            "status": "ambiguous",
+            "evidence": [],
+            "explanation": "nivel citado no requisito composto nao foi ligado com seguranca.",
+            "required_level": None,
+            "level_ambiguous": True,
+        }
+    return {
+        "term": term,
+        "status": "not_proven",
+        "evidence": [],
+        "explanation": "",
+        "required_level": _level_label(required_level),
+        "level_ambiguous": False,
+    }
 
 
 def _term_status_name(status: RequirementMatchStatus) -> str:
@@ -1183,6 +1337,8 @@ def _term_status_name(status: RequirementMatchStatus) -> str:
         return "matched"
     if status is RequirementMatchStatus.PARTIAL:
         return "partial"
+    if status is RequirementMatchStatus.AMBIGUOUS:
+        return "ambiguous"
     return "not_proven"
 
 
@@ -1510,6 +1666,48 @@ def _required_level(normalized_requirement: str) -> int | None:
         if label in normalized_requirement:
             return order
     return None
+
+
+def _required_level_for_term(
+    requirement_text: str,
+    term: str,
+    terms: tuple[str, ...],
+) -> tuple[int | None, bool]:
+    normalized = normalize_text(requirement_text)
+    normalized_term = normalize_text(term)
+    level_labels = "|".join(
+        re.escape(label) for label in sorted(LEVEL_ORDER, key=len, reverse=True)
+    )
+    term_pattern = re.escape(normalized_term).replace(r"\ ", r"\s+")
+    after = re.search(
+        rf"(?<![a-z0-9]){term_pattern}(?![a-z0-9])\s+(?:nivel\s+)?({level_labels})\b",
+        normalized,
+    )
+    before = re.search(
+        rf"\b(?:nivel\s+)?({level_labels})\s+(?:em|de|com)?\s*"
+        rf"(?<![a-z0-9]){term_pattern}(?![a-z0-9])",
+        normalized,
+    )
+    matches = [match.group(1) for match in (after, before) if match is not None]
+    levels = {LEVEL_ORDER[label] for label in matches}
+    if len(levels) == 1:
+        return next(iter(levels)), False
+    if len(levels) > 1:
+        return None, True
+    if len(terms) == 1:
+        return _required_level(normalized), False
+    if any(label in normalized for label in LEVEL_ORDER):
+        return None, True
+    return None, False
+
+
+def _level_label(level: int | None) -> str | None:
+    if level is None:
+        return None
+    for label, order in LEVEL_ORDER.items():
+        if order == level:
+            return label
+    return str(level)
 
 
 def _normalized_level(value: Any) -> int | None:

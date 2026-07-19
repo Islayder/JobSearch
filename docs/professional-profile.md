@@ -68,6 +68,11 @@ A comparacao grava:
 - pontos de atencao;
 - explicacao por requisito.
 
+Cada `JobRequirementMatch` tambem preserva auditoria detalhada do requisito:
+origem (`requirement_source`), texto original, termos avaliados e resultado por
+termo em JSON. Registros antigos sem esses campos continuam legiveis como
+historico legado.
+
 Reexecutar a mesma comparacao para a mesma vaga, versao do perfil, versao das
 regras e hash do conteudo retorna o registro existente. Quando a vaga, o perfil
 ou as regras mudam, o Radar cria uma nova comparacao e preserva a anterior para
@@ -90,6 +95,10 @@ Regras especificas:
 
 - Requisitos compostos de tecnologia, como `SQL e Python`, so ficam `MATCHED`
   quando todos os termos internos tiverem evidencia suficiente.
+- Requisitos compostos com niveis especificos, como `SQL intermediario e Excel
+  avancado`, avaliam cada termo com seu proprio nivel quando o texto permite.
+- Requisitos compostos com nivel ambiguo ficam em revisao humana quando nao e
+  seguro atribuir o nivel a um termo especifico.
 - Nivel declarado e comparado quando o texto informa senioridade tecnica, por
   exemplo Excel avancado contra Excel basico.
 - Formacao considera curso, situacao de estudante/cursando e previsao de
@@ -98,3 +107,11 @@ Regras especificas:
   incompletos ficam `AMBIGUOUS` em vez de inventar tempo de experiencia.
 - Projetos e experiencias podem comprovar requisitos tecnicos quando citam a
   tecnologia ou atividade exigida.
+
+## Comparacao em Lote
+
+A interface web expoe a acao "Analisar compatibilidade das vagas" para vagas
+`ELIGIBLE`, `RECOMMENDED` e `PENDING_REVIEW`. Ela exige um perfil ativo, respeita
+limite informado, reutiliza comparacoes historicas com a mesma identidade e
+reporta criadas, reutilizadas, ignoradas e falhas. A acao nao roda
+automaticamente no carregamento do dashboard.

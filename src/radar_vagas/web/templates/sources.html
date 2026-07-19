@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Fontes - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>Fontes</h1>
+      <p>Saude local de boards, consultas e execucoes.</p>
+    </div>
+    <form class="inline" action="/sources/collect-search-plan" method="post" data-confirm="Executar coleta manual agora?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Coletar agora</button>
+    </form>
+  </section>
+
+  <section class="metrics" aria-label="Fontes">
+    <div class="metric"><strong>{{ sources|length }}</strong><span>fontes</span></div>
+    <div class="metric"><strong>{{ boards|length }}</strong><span>boards</span></div>
+    <div class="metric"><strong>{{ queries|length }}</strong><span>consultas</span></div>
+    <div class="metric"><strong>{{ failed_runs }}</strong><span>falhas</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Coleta manual</h2>
+    <p>
+      <span class="badge {{ collection_status.state }}">{{ collection_status.state }}</span>
+      {{ collection_status.message }}
+    </p>
+    <p class="muted">
+      Encontradas {{ collection_status.found }} · novas {{ collection_status.created }}
+    </p>
+    {% for error in collection_status.errors %}
+      <p class="notice error">{{ error }}</p>
+    {% endfor %}
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Consultas</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Coletor</th><th>Ativa</th><th>Ultimo sucesso</th></tr></thead>
+          <tbody>
+            {% for query in queries %}
+              <tr>
+                <td>{{ query.key }}</td>
+                <td>{{ query.collector_type }}</td>
+                <td>{{ "sim" if query.is_active else "nao" }}</td>
+                <td>{{ query.last_success_at|datetime(ui.timezone) }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="empty">Nenhuma consulta persistida.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Boards</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Coletor</th><th>Ativo</th><th>Falhas</th></tr></thead>
+          <tbody>
+            {% for board in boards %}
+              <tr>
+                <td>{{ board.key }}</td>
+                <td>{{ board.collector_type }}</td>
+                <td>{{ "sim" if board.is_active else "nao" }}</td>
+                <td>{{ board.consecutive_failures }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="empty">Nenhum board persistido.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Execucoes recentes</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Fonte</th><th>Status</th><th>Itens</th><th>Inicio</th></tr></thead>
+        <tbody>
+          {% for run in recent_runs %}
+            <tr>
+              <td>{{ run.source.name }}</td>
+              <td><span class="badge {{ run.status|status_class }}">{{ run.status|label }}</span></td>
+              <td>{{ run.items_found }}</td>
+              <td>{{ run.started_at|datetime(ui.timezone) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="empty">Nenhuma execucao registrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

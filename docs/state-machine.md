@@ -155,11 +155,19 @@ stateDiagram-v2
     [*] --> CONFIRMED: evento manual
     SUGGESTED --> CONFIRMED
     SUGGESTED --> DISMISSED
+    SUGGESTED --> CANCELLED
     CONFIRMED --> COMPLETED
     CONFIRMED --> CANCELLED
+    DISMISSED --> [*]
+    COMPLETED --> [*]
+    CANCELLED --> [*]
 ```
 
 Eventos de agenda nao fazem integracao externa. Eventos manuais podem nascer
 confirmados. Eventos vindos de descricao de vaga, e-mail importado ou estimativa
 nascem como sugestao. Eventos estimados nunca viram compromisso confirmado sem
 nova entrada manual mais confiavel.
+
+Reaplicar a mesma transicao terminal ou de confirmacao e idempotente: o Radar
+nao duplica auditoria nem reescreve timestamps. Edicoes estruturais de eventos
+terminais sao bloqueadas para preservar historico.

@@ -97,6 +97,17 @@ def test_job_profile_comparison_explains_all_requirement_categories(tmp_path: Pa
         comparison = session.scalar(select(JobProfileComparison))
         assert comparison is not None
         assert comparison.profile_version_id == result.profile_version_id
+        persisted = session.scalar(
+            select(JobRequirementMatch).where(
+                JobRequirementMatch.requirement_text == "Conhecimento em Tableau"
+            )
+        )
+        assert persisted is not None
+        assert persisted.requirement_source == "requirements"
+        assert persisted.original_text == "Conhecimento em Tableau"
+        assert persisted.terms_json == '["tableau"]'
+        assert persisted.term_results_json is not None
+        assert "tableau" in persisted.term_results_json
 
 
 def test_profile_change_creates_new_version_and_allows_reevaluation(tmp_path: Path) -> None:
@@ -199,6 +210,75 @@ def test_required_level_is_compared_against_profile_level(tmp_path: Path) -> Non
 
         assert excel.status is RequirementMatchStatus.PARTIAL
         assert sql.status is RequirementMatchStatus.MATCHED
+
+
+def test_compound_requirement_level_is_evaluated_per_term_when_safe(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    run_migrations(settings)
+    profile_path = _write_minimal_profile(
+        tmp_path,
+        skills="""
+  - name: SQL
+    level: intermediario
+    evidence:
+      - title: Projeto SQL
+        evidence_type: PROJECT
+  - name: Excel
+    level: basico
+    evidence:
+      - title: Planilha academica
+        evidence_type: PROJECT
+""",
+    )
+
+    with session_scope(settings) as session:
+        import_professional_profile(session, profile_path)
+        job = _create_job_with_requirements(session, "SQL intermediario e Excel avancado")
+        result = compare_job_to_profile(session, job.id)
+        requirement = result.requirements[0]
+
+        assert requirement.status is RequirementMatchStatus.PARTIAL
+        statuses = {item["term"]: item for item in requirement.term_results}
+        assert statuses["sql"]["status"] == "matched"
+        assert statuses["sql"]["required_level"] == "intermediario"
+        assert statuses["excel"]["status"] == "partial"
+        assert statuses["excel"]["required_level"] == "avancado"
+
+
+def test_compound_requirement_level_is_ambiguous_when_not_tied_to_term(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    run_migrations(settings)
+    profile_path = _write_minimal_profile(
+        tmp_path,
+        skills="""
+  - name: SQL
+    level: intermediario
+    evidence:
+      - title: Projeto SQL
+        evidence_type: PROJECT
+  - name: Excel
+    level: avancado
+    evidence:
+      - title: Planilha academica
+        evidence_type: PROJECT
+""",
+    )
+
+    with session_scope(settings) as session:
+        import_professional_profile(session, profile_path)
+        job = _create_job_with_requirements(session, "SQL e Excel avancado")
+        result = compare_job_to_profile(session, job.id)
+        requirement = result.requirements[0]
+
+        assert requirement.status is RequirementMatchStatus.PARTIAL
+        statuses = {item["term"]: item for item in requirement.term_results}
+        assert statuses["sql"]["status"] == "ambiguous"
+        assert statuses["sql"]["level_ambiguous"] is True
+        assert statuses["excel"]["status"] == "matched"
 
 
 def test_education_requirements_distinguish_match_absence_and_incompatibility(

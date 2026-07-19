@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Candidatura {{ application.id }} - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>{{ application.job.canonical_title }}</h1>
+      <p>{{ application.job.company.canonical_name }} · {{ application.status|label }} · {{ application.stage|label }}</p>
+    </div>
+    <a class="button secondary" href="/jobs/{{ application.job.id }}">Abrir vaga</a>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Linha do tempo</h2>
+      <div class="list">
+        {% for event in application.events|sort(attribute="occurred_at") %}
+          <div class="row">
+            <strong>{{ event.event_type|label }}</strong>
+            <div class="muted">{{ event.occurred_at|datetime(ui.timezone) }} · {{ event.source }}</div>
+            {% if event.notes %}<p>{{ event.notes }}</p>{% endif %}
+          </div>
+        {% else %}
+          <p class="empty">Nenhum evento registrado.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <form class="card" action="/applications/{{ application.id }}/events" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Adicionar evento</h2>
+      <div class="field">
+        <label for="event_type">Tipo</label>
+        <select id="event_type" name="event_type">
+          {% for value, text in application_event_types.items() %}
+            <option value="{{ value.value }}">{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="occurred_at">Data/hora</label>
+        <input id="occurred_at" name="occurred_at" type="datetime-local">
+      </div>
+      <div class="field">
+        <label for="notes">Notas</label>
+        <textarea id="notes" name="notes"></textarea>
+      </div>
+      <button type="submit">Registrar evento</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Agenda ligada</h2>
+    <div class="list">
+      {% for event in application.career_events %}
+        <div class="row">
+          <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
+          <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
+        </div>
+      {% else %}
+        <p class="empty">Nenhum compromisso ligado.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

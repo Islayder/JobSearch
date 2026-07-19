@@ -2,6 +2,7 @@ import json
 import re
 from hashlib import sha256
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -202,6 +203,43 @@ class NetworkConfig(BaseModel):
     http: HttpConfig = Field(default_factory=HttpConfig)
     collection: CollectionConfig = Field(default_factory=CollectionConfig)
     search_plan: SearchPlanConfig = Field(default_factory=SearchPlanConfig)
+
+
+class UiConfig(BaseModel):
+    timezone: str = "America/Sao_Paulo"
+    page_size: int = Field(default=25, ge=5, le=100)
+    auto_open_browser: bool = True
+    default_job_sort: str = "score"
+    default_job_filters: dict[str, str] = Field(default_factory=dict)
+    theme_preference: str = "system"
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        timezone = value.strip()
+        if not timezone:
+            raise ValueError("timezone nao pode ficar vazio")
+        try:
+            ZoneInfo(timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"timezone invalido: {timezone}") from exc
+        return timezone
+
+    @field_validator("default_job_sort")
+    @classmethod
+    def validate_sort(cls, value: str) -> str:
+        sort = value.strip().lower()
+        if sort not in {"score", "newest", "first-seen"}:
+            raise ValueError("default_job_sort deve ser score, newest ou first-seen")
+        return sort
+
+    @field_validator("theme_preference")
+    @classmethod
+    def validate_theme(cls, value: str) -> str:
+        theme = value.strip().lower()
+        if theme not in {"system", "light", "dark"}:
+            raise ValueError("theme_preference deve ser system, light ou dark")
+        return theme
 
 
 class BoardConfig(BaseModel):

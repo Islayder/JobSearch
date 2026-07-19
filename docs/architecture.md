@@ -20,6 +20,8 @@ SQLite como banco e separa camadas por responsabilidade:
 - Revisao e candidaturas: politica central de estados, fila manual, guardas,
   historico local e redutor de timeline.
 - Agenda local: prazos, entrevistas, testes e follow-ups sem calendario externo.
+- Interface web local: FastAPI, Jinja2 e HTML/CSS server-side para operar o
+  mesmo banco local pelo navegador.
 - Persistencia: SQLAlchemy, sessoes, modelos e migracoes Alembic.
 
 ```mermaid
@@ -38,15 +40,20 @@ flowchart LR
     R --> V
     V --> A["Agenda local"]
     V --> I["CLI"]
+    V --> W["Web local"]
     A --> I
+    A --> W
     F --> I
+    F --> W
 ```
 
 ## Dependencias Permitidas
 
 O projeto usa Python 3.12+, SQLAlchemy 2.x, Alembic, Pydantic 2.x, Typer, Rich,
-PyYAML, httpx, beautifulsoup4, pytest, Ruff e mypy. Nao ha Django, Flask,
-FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
+PyYAML, httpx, beautifulsoup4, pytest, Ruff e mypy. A interface web e extra
+opcional e usa FastAPI, Uvicorn, Jinja2, python-multipart e itsdangerous. A CLI
+e o nucleo continuam funcionando sem instalar o extra `web`. Nao ha Django,
+Flask, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
 
 ## Fluxo
 
@@ -72,7 +79,9 @@ FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
    comparacoes historicas auditaveis por hash da vaga.
 12. `radar agenda` e comandos `*-agenda-event` cuidam da agenda local, sem
    Google Calendar, notificacoes ou leitura de e-mail.
-13. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
+13. `radar web` inicia uma interface local em `127.0.0.1`, aplica migracoes
+   antes de servir paginas e reutiliza os mesmos servicos de dominio da CLI.
+14. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
    `radar show-job`, `radar stats`, `radar boards` e `radar source-health`
    consultam ou atualizam o banco.
 
@@ -117,7 +126,7 @@ fecha publicacoes. Snapshots parciais por truncamento, itens invalidos ou HTTP
 - Interpretacao semantica ampla ou IA.
 - Playwright.
 - Candidatura automatica ou envio de formulario.
-- Interface web.
+- Interface web publica, multiusuario ou hospedada.
 
 ## Por Que SQLite
 

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Candidaturas - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>Candidaturas</h1>
+      <p>Acompanhamento manual por eventos.</p>
+    </div>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Vaga</th><th>Empresa</th><th>Status</th><th>Etapa</th><th>Atualizada</th></tr></thead>
+      <tbody>
+        {% for application in applications %}
+          <tr>
+            <td><a href="/applications/{{ application.id }}">{{ application.job.canonical_title }}</a></td>
+            <td>{{ application.job.company.canonical_name }}</td>
+            <td><span class="badge {{ application.status|status_class }}">{{ application.status|label }}</span></td>
+            <td>{{ application.stage|label }}</td>
+            <td>{{ application.updated_at|datetime(ui.timezone) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="empty">Nenhuma candidatura registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

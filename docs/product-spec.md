@@ -18,7 +18,8 @@ duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 - agenda local registrada manualmente ou derivada de dados locais.
 
 Nao ha crawling recursivo, IA, Gmail, geracao automatica de curriculo,
-Google Calendar, preenchimento de formularios ou candidatura automatica.
+Google Calendar, preenchimento de formularios, candidatura automatica ou
+interface publica.
 
 ## Usuario
 
@@ -107,3 +108,14 @@ respostas de oferta e follow-ups. Eventos podem estar ligados a vaga,
 candidatura, ambas ou nenhuma delas. O sistema valida datas com timezone,
 intervalos e URLs de reuniao, mas nao cria evento em calendario externo, nao
 le e-mail e nao envia notificacao.
+
+## Interface Web Local
+
+`radar web` oferece uma interface em portugues para o mesmo banco SQLite local.
+Ela cobre onboarding de perfil, dashboard, listagem e detalhe de vagas,
+revisao manual, registro de candidatura feita fora do Radar, candidaturas,
+agenda, perfil e saude das fontes.
+
+A interface nao coleta automaticamente ao abrir, nao calcula compatibilidade em
+GET e nao executa candidatura. Coleta manual e comparacao em lote exigem acao
+explicita do usuario e reutilizam os mesmos servicos de dominio da CLI.

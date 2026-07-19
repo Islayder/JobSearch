@@ -33,8 +33,24 @@ Datas informadas devem conter timezone. `ends_at` nao pode ser anterior a
 `starts_at`. Um evento ligado a uma candidatura deve pertencer a mesma vaga
 quando `job_id` tambem for informado.
 
-Repetir uma operacao com o mesmo `event_key` retorna o evento existente e nao
-cria duplicata.
+O timezone e validado com a base IANA disponivel via `zoneinfo`. As datas sao
+persistidas em UTC e o timezone original e preservado em `CareerEvent.timezone`.
+`America/Sao_Paulo` e apenas o padrao local configuravel.
+
+Transicoes validas de `confirmation_status`:
+
+- `SUGGESTED` para `CONFIRMED`, `DISMISSED` ou `CANCELLED`.
+- `CONFIRMED` para `COMPLETED` ou `CANCELLED`.
+- `DISMISSED`, `COMPLETED` e `CANCELLED` sao terminais.
+
+Repetir uma operacao de estado ja aplicada e idempotente: retorna o mesmo
+evento, nao muda timestamps e nao grava auditoria duplicada. `completed_at` so
+e preenchido em `COMPLETED`; `cancelled_at` so e preenchido em `CANCELLED`.
+
+Repetir uma criacao com o mesmo `event_key` retorna o evento existente somente
+quando a identidade canonica e equivalente: tipo, vaga, candidatura, fonte,
+horario e titulo relevante. Reusar a mesma chave para outro compromisso gera
+erro.
 
 ## CLI
 

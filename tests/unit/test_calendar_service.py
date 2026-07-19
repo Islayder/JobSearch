@@ -57,8 +57,10 @@ def test_create_manual_event_defaults_confirmed_and_event_key_is_idempotent(
             job_id=job.id,
             event_key="manual:interview:1",
             event_type=CareerEventType.INTERVIEW,
-            title="Entrevista tecnica alterada",
-            starts_at=datetime(2026, 7, 22, 10, 0, tzinfo=UTC),
+            title="Entrevista tecnica",
+            starts_at=datetime(2026, 7, 21, 10, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 7, 21, 11, 0, tzinfo=UTC),
+            timezone="America/Sao_Paulo",
         )
 
         assert repeated.id == first.id
@@ -93,6 +95,13 @@ def test_calendar_event_validation_blocks_unsafe_or_inconsistent_data(
                 title="Sem timezone",
                 starts_at=datetime(2026, 7, 21, 10, 0),
             )
+        with pytest.raises(RadarError, match="timezone invalido"):
+            create_event(
+                session,
+                event_type=CareerEventType.INTERVIEW,
+                title="Timezone invalido",
+                timezone="Nao/Existe",
+            )
         with pytest.raises(RadarError, match="ends_at"):
             create_event(
                 session,
@@ -123,6 +132,36 @@ def test_calendar_event_validation_blocks_unsafe_or_inconsistent_data(
                 title="Job errado",
                 job_id=second_job.id,
                 application_id=application.id,
+            )
+
+
+def test_event_key_reuse_requires_canonical_identity(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    run_migrations(settings)
+
+    with session_scope(settings) as session:
+        job = _create_job(session)
+        create_event(
+            session,
+            job_id=job.id,
+            event_key="email:interview:fixed",
+            event_type=CareerEventType.INTERVIEW,
+            title="Entrevista tecnica",
+            starts_at=datetime(2026, 7, 21, 10, 0, tzinfo=UTC),
+            timezone="UTC",
+            source=CareerEventSource.EMAIL,
+        )
+
+        with pytest.raises(RadarError, match="event_key"):
+            create_event(
+                session,
+                job_id=job.id,
+                event_key="email:interview:fixed",
+                event_type=CareerEventType.INTERVIEW,
+                title="Entrevista com RH",
+                starts_at=datetime(2026, 7, 21, 10, 0, tzinfo=UTC),
+                timezone="UTC",
+                source=CareerEventSource.EMAIL,
             )
 
 
@@ -173,6 +212,37 @@ def test_calendar_update_lifecycle_lists_and_audits_changes(tmp_path: Path) -> N
             interview.id
         ]
         assert session.scalar(select(func.count(CareerEventAudit.id))) == 5
+
+
+def test_calendar_lifecycle_blocks_invalid_terminal_transitions_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    run_migrations(settings)
+
+    with session_scope(settings) as session:
+        suggested = create_event(
+            session,
+            event_type=CareerEventType.ASSESSMENT,
+            title="Teste sugerido",
+            source=CareerEventSource.JOB_DESCRIPTION,
+        )
+        with pytest.raises(RadarError, match="Transicao"):
+            complete_event(session, suggested.id)
+
+        confirm_event(session, suggested.id)
+        confirm_event(session, suggested.id)
+        complete_event(session, suggested.id)
+        completed_at = suggested.completed_at
+        complete_event(session, suggested.id)
+        assert suggested.completed_at == completed_at
+        assert suggested.cancelled_at is None
+
+        with pytest.raises(RadarError, match="Transicao"):
+            cancel_event(session, suggested.id)
+        with pytest.raises(RadarError, match="terminal"):
+            update_event(session, suggested.id, title="Outro titulo")
+        assert session.scalar(select(func.count(CareerEventAudit.id))) == 3
 
 
 def test_non_manual_event_starts_suggested_and_can_be_confirmed_except_estimated(

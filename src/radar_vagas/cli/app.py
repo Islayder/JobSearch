@@ -2,7 +2,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -65,6 +64,11 @@ from radar_vagas.collection.orchestrator import (
 from radar_vagas.collection.result import (
     CollectionExecutionReport,
     write_collection_report,
+)
+from radar_vagas.collection.search_plan import (
+    SearchPlanBudget,
+    SearchPlanBudgetState,
+    run_search_plan,
 )
 from radar_vagas.collectors.registry import get_collector, list_collectors
 from radar_vagas.config.loaders import (
@@ -161,83 +165,8 @@ class ResolvedBoard:
     persist: bool
 
 
-@dataclass(frozen=True)
-class SearchPlanBudget:
-    max_total_requests: int
-    max_total_items: int
-    max_duration_seconds: int
-
-
-@dataclass
-class _SearchPlanBudgetState:
-    budget: SearchPlanBudget
-    request_budget: HttpRequestBudget | None = None
-    started_at: float = 0.0
-    items_used: int = 0
-    exhausted_by: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.started_at == 0.0:
-            self.started_at = time.monotonic()
-        if self.request_budget is None:
-            self.request_budget = HttpRequestBudget(
-                max_requests=self.budget.max_total_requests,
-                max_duration_seconds=self.budget.max_duration_seconds,
-            )
-
-    @property
-    def exhausted(self) -> bool:
-        return self.exhausted_by is not None
-
-    def should_stop_before_query(self) -> bool:
-        if self.requests_used >= self.budget.max_total_requests:
-            self.exhausted_by = "max_total_requests"
-            return True
-        if self.items_used >= self.budget.max_total_items:
-            self.exhausted_by = "max_total_items"
-            return True
-        if self.elapsed_seconds >= self.budget.max_duration_seconds:
-            self.exhausted_by = "max_duration_seconds"
-            return True
-        return False
-
-    @property
-    def elapsed_seconds(self) -> float:
-        if self.request_budget is not None:
-            return self.request_budget.elapsed_seconds
-        return time.monotonic() - self.started_at
-
-    @property
-    def requests_used(self) -> int:
-        if self.request_budget is not None:
-            return self.request_budget.requests_used
-        return 0
-
-    def max_pages_for_query(self, requested: int) -> int:
-        return requested
-
-    def max_items_for_query(self, requested: int) -> int:
-        remaining_items = self.budget.max_total_items - self.items_used
-        return min(requested, remaining_items)
-
-    def record_execution(
-        self,
-        _query: SearchQueryConfig,
-        execution: CollectionExecutionReport,
-    ) -> CollectionExecutionReport:
-        items = execution.summary.found
-        self.items_used += items
-        limited_by = execution.metadata.get("budget_limited_by")
-        if isinstance(limited_by, str) and limited_by:
-            self.exhausted_by = limited_by
-            return execution
-        if self.requests_used >= self.budget.max_total_requests:
-            self.exhausted_by = "max_total_requests"
-        elif self.items_used >= self.budget.max_total_items:
-            self.exhausted_by = "max_total_items"
-        elif self.elapsed_seconds >= self.budget.max_duration_seconds:
-            self.exhausted_by = "max_duration_seconds"
-        return execution
+class _SearchPlanBudgetState(SearchPlanBudgetState):
+    pass
 
 
 @app.callback()
@@ -259,6 +188,64 @@ def init_db(ctx: typer.Context) -> None:
         settings = _settings(ctx)
         run_migrations(settings)
         console.print(f"Banco inicializado em: [bold]{database_display_path(settings)}[/bold]")
+
+    _run(ctx, action)
+
+
+@app.command("web")
+def web_command(
+    ctx: typer.Context,
+    port: Annotated[int, typer.Option("--port", help="Porta local da interface.")] = 8000,
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Host local de loopback."),
+    ] = "127.0.0.1",
+    no_open_browser: Annotated[
+        bool,
+        typer.Option("--no-open-browser", help="Nao abre o navegador automaticamente."),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Exibe traceback completo na interface web."),
+    ] = False,
+) -> None:
+    """Inicia a interface web local."""
+
+    def action() -> None:
+        _apply_command_debug(ctx, debug)
+        if port <= 0 or port > 65535:
+            raise RadarError("--port deve ficar entre 1 e 65535.")
+        try:
+            import threading
+            import webbrowser
+
+            import uvicorn
+
+            from radar_vagas.config.loaders import load_ui_config
+            from radar_vagas.web.app import create_app
+            from radar_vagas.web.server import WebServerLock, validate_bind_host
+        except ImportError as exc:
+            console.print(
+                '[red]Erro:[/red] Interface web nao instalada. Execute: pip install -e ".[web]"'
+            )
+            raise typer.Exit(1) from exc
+
+        settings = _settings(ctx)
+        bind_host = validate_bind_host(host)
+        web_app = create_app(settings, debug=debug)
+        url = f"http://{bind_host}:{port}"
+        ui_config = load_ui_config(settings.config_dir)
+        auto_open = ui_config.auto_open_browser and not no_open_browser
+        with WebServerLock(settings, port):
+            if auto_open:
+                threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+            console.print(f"Interface web local em: [bold]{url}[/bold]")
+            uvicorn.run(
+                web_app,
+                host=bind_host,
+                port=port,
+                log_level="debug" if debug else "warning",
+            )
 
     _run(ctx, action)
 
@@ -781,60 +768,28 @@ def collect_search_plan_command(
 
     def action() -> None:
         settings = _settings(ctx)
-        network = load_network_config(settings.config_dir)
-        budget = _search_plan_budget(
-            network,
-            max_total_requests=max_total_requests,
-            max_total_items=max_total_items,
-            max_duration_seconds=max_duration_seconds,
-        )
-        queries = _filtered_queries(
+        result = run_search_plan(
             settings,
             collector=collector,
             tags=tag or [],
+            dry_run=dry_run,
             max_queries=max_queries,
+            max_pages_per_query=max_pages_per_query,
+            max_items_per_query=max_items_per_query,
+            max_total_requests=max_total_requests,
+            max_total_items=max_total_items,
+            max_duration_seconds=max_duration_seconds,
+            continue_on_error=continue_on_error,
         )
-        executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]] = []
-        errors: list[str] = []
-        budget_state = _SearchPlanBudgetState(budget)
-        client = _http_client(network, request_budget=budget_state.request_budget)
-        try:
-            for query in queries:
-                if budget_state.should_stop_before_query():
-                    break
-                query_max_pages = budget_state.max_pages_for_query(
-                    _positive_override(max_pages_per_query, "max-pages-per-query")
-                    or query.max_pages
-                )
-                query_max_items = budget_state.max_items_for_query(
-                    _positive_override(max_items_per_query, "max-items-per-query")
-                    or query.max_items
-                )
-                if query_max_pages <= 0 or query_max_items <= 0:
-                    break
-                try:
-                    execution = _collect_single_query(
-                        settings,
-                        query,
-                        dry_run=dry_run,
-                        max_pages=query_max_pages,
-                        max_items=query_max_items,
-                        http_client=client,
-                    )
-                    execution = budget_state.record_execution(query, execution)
-                    executions.append((query, execution))
-                except Exception as exc:
-                    errors.append(f"{query.key}: {exc}")
-                    if not continue_on_error:
-                        raise
-                if budget_state.exhausted:
-                    break
-        finally:
-            client.close()
-        _print_collect_search_plan_result(executions, errors, budget_state)
+        _print_collect_search_plan_result(result.executions, result.errors, result.budget_state)
         if report is not None:
-            _write_collect_search_plan_report(executions, errors, report, budget_state)
-        if errors:
+            _write_collect_search_plan_report(
+                result.executions,
+                result.errors,
+                report,
+                result.budget_state,
+            )
+        if result.errors:
             raise typer.Exit(1)
 
     _run(ctx, action)
@@ -2134,7 +2089,7 @@ def _query_report_payload(
 def _print_collect_search_plan_result(
     executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]],
     errors: list[str],
-    budget_state: _SearchPlanBudgetState,
+    budget_state: SearchPlanBudgetState,
 ) -> None:
     table = Table(title="Plano de consultas")
     table.add_column("Query", no_wrap=True)
@@ -2179,7 +2134,7 @@ def _write_collect_search_plan_report(
     executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]],
     errors: list[str],
     report_path: Path,
-    budget_state: _SearchPlanBudgetState,
+    budget_state: SearchPlanBudgetState,
 ) -> None:
     payload = {
         "queries": [_query_report_payload(query, execution) for query, execution in executions],

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Perfil - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>Perfil profissional</h1>
+      <p>Versoes locais usadas na analise de compatibilidade.</p>
+    </div>
+  </section>
+
+  <section class="metrics" aria-label="Perfil">
+    <div class="metric"><strong>{{ versions|length }}</strong><span>versoes</span></div>
+    <div class="metric"><strong>{{ ui_config.page_size }}</strong><span>itens por pagina</span></div>
+    <div class="metric"><strong>{{ ui_config.timezone }}</strong><span>timezone</span></div>
+    <div class="metric"><strong>{{ ui_config.theme_preference }}</strong><span>tema</span></div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Perfil ativo</h2>
+      {% if active_profile %}
+        <p><strong>{{ active_profile.profile.name }}</strong></p>
+        <p>Versao {{ active_profile.version_number }} · criada em {{ active_profile.created_at|datetime(ui.timezone) }}</p>
+        {% if active_profile.headline %}<p>{{ active_profile.headline }}</p>{% endif %}
+        {% if active_profile.summary %}<p>{{ active_profile.summary }}</p>{% endif %}
+      {% else %}
+        <p class="empty">Nenhum perfil ativo.</p>
+      {% endif %}
+    </div>
+
+    <form class="card" action="/profile/batch-compare" method="post" data-confirm="Analisar compatibilidade das vagas ativas agora?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Analisar compatibilidade</h2>
+      <div class="field">
+        <label for="limit">Limite</label>
+        <input id="limit" name="limit" type="number" min="1" max="500" value="50">
+      </div>
+      <button type="submit">Analisar vagas</button>
+    </form>
+  </section>
+
+  <section class="grid">
+    <form class="card" action="/profile/config" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Configuracao local</h2>
+      <div class="field">
+        <label for="timezone">Timezone</label>
+        <input id="timezone" name="timezone" value="{{ ui_config.timezone }}">
+      </div>
+      <div class="field">
+        <label for="page_size">Itens por pagina</label>
+        <input id="page_size" name="page_size" type="number" min="5" max="100" value="{{ ui_config.page_size }}">
+      </div>
+      <div class="field">
+        <label for="default_job_sort">Ordenacao padrao</label>
+        <select id="default_job_sort" name="default_job_sort">
+          <option value="score" {% if ui_config.default_job_sort == "score" %}selected{% endif %}>Pontuacao</option>
+          <option value="newest" {% if ui_config.default_job_sort == "newest" %}selected{% endif %}>Mais novas</option>
+          <option value="first-seen" {% if ui_config.default_job_sort == "first-seen" %}selected{% endif %}>Primeiro achado</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="theme_preference">Tema</label>
+        <select id="theme_preference" name="theme_preference">
+          <option value="system" {% if ui_config.theme_preference == "system" %}selected{% endif %}>Sistema</option>
+          <option value="light" {% if ui_config.theme_preference == "light" %}selected{% endif %}>Claro</option>
+          <option value="dark" {% if ui_config.theme_preference == "dark" %}selected{% endif %}>Escuro</option>
+        </select>
+      </div>
+      <label><input name="auto_open_browser" type="checkbox" {% if ui_config.auto_open_browser %}checked{% endif %}> Abrir navegador ao iniciar</label>
+      <button type="submit">Salvar</button>
+    </form>
+
+    <form class="card" action="/profile/manual" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Novo perfil manual</h2>
+      <div class="field">
+        <label for="profile_name">Nome</label>
+        <input id="profile_name" name="profile_name" required>
+      </div>
+      <div class="field">
+        <label for="headline">Titulo</label>
+        <input id="headline" name="headline">
+      </div>
+      <div class="field">
+        <label for="summary">Resumo</label>
+        <textarea id="summary" name="summary"></textarea>
+      </div>
+      <div class="field">
+        <label for="skills">Habilidades</label>
+        <textarea id="skills" name="skills" required></textarea>
+      </div>
+      <button type="submit">Criar</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Importar arquivo</h2>
+    <form class="toolbar" action="/profile/import" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field">
+        <label for="file">YAML, JSON ou TXT</label>
+        <input id="file" name="file" type="file" accept=".yaml,.yml,.json,.txt" required>
+      </div>
+      <button type="submit">Importar</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Versoes</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Perfil</th><th>Versao</th><th>Skills</th><th>Ativo</th><th>Acao</th></tr></thead>
+        <tbody>
+          {% for version in versions %}
+            <tr>
+              <td>{{ version.profile.name }}</td>
+              <td>{{ version.version_number }}</td>
+              <td>{{ version.skills|length }}</td>
+              <td>{{ "sim" if version.is_active else "nao" }}</td>
+              <td>
+                <form class="inline" action="/profile/{{ version.id }}/activate" method="post">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="secondary" type="submit" {% if version.is_active %}disabled{% endif %}>Ativar</button>
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="empty">Nenhum perfil cadastrado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

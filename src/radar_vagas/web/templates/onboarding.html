@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Onboarding - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>Primeiro acesso</h1>
+      <p>O Radar roda localmente. Nao ha envio de curriculo, candidatura automatica ou login em plataformas.</p>
+    </div>
+  </section>
+
+  <section class="grid">
+    <form class="card" action="/onboarding/profile/upload" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Importar perfil</h2>
+      <div class="field">
+        <label for="upload_timezone">Timezone local</label>
+        <input id="upload_timezone" name="timezone" value="{{ ui.timezone }}">
+      </div>
+      <div class="field">
+        <label for="profile_file">Arquivo YAML, JSON ou TXT</label>
+        <input id="profile_file" name="file" type="file" accept=".yaml,.yml,.json,.txt" required>
+      </div>
+      <button type="submit">Importar e ativar</button>
+    </form>
+
+    <form class="card" action="/onboarding/profile/manual" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Criar perfil manual</h2>
+      <div class="field">
+        <label for="manual_timezone">Timezone local</label>
+        <input id="manual_timezone" name="timezone" value="{{ ui.timezone }}">
+      </div>
+      <div class="field">
+        <label for="profile_name">Nome do perfil</label>
+        <input id="profile_name" name="profile_name" value="Perfil local" required>
+      </div>
+      <div class="field">
+        <label for="headline">Titulo</label>
+        <input id="headline" name="headline" placeholder="Dados e BI">
+      </div>
+      <div class="field">
+        <label for="summary">Resumo</label>
+        <textarea id="summary" name="summary"></textarea>
+      </div>
+      <div class="field">
+        <label for="skills">Habilidades, uma por linha</label>
+        <textarea id="skills" name="skills" required>SQL
+Python
+Power BI</textarea>
+      </div>
+      <button type="submit">Criar e ativar</button>
+    </form>
+  </section>
+
+  {% if versions %}
+    <section class="card">
+      <h2>Versoes existentes</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Perfil</th><th>Versao</th><th>Ativo</th><th>Acao</th></tr></thead>
+          <tbody>
+            {% for version in versions %}
+              <tr>
+                <td>{{ version.profile.name }}</td>
+                <td>{{ version.version_number }}</td>
+                <td>{{ "sim" if version.is_active else "nao" }}</td>
+                <td>
+                  <form class="inline" action="/profile/{{ version.id }}/activate" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="secondary" type="submit">Ativar</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

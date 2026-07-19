@@ -57,6 +57,10 @@ radar query-health
 Dry-run nao grava `Source`, `SourceRun`, `SearchQuery`, `DiscoveryHit`,
 `Company`, `Posting`, `Job`, `Decision` ou revisoes.
 
+O mesmo executor do plano e reutilizado pela interface web para a acao manual
+de coleta. A web nao chama a CLI em subprocesso e mantem apenas uma coleta em
+andamento por processo local.
+
 ## DiscoveryHit
 
 `DiscoveryHit` registra que uma consulta encontrou uma publicacao em uma

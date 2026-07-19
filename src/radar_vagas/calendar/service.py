@@ -5,10 +5,12 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from radar_vagas.canonicalization.normalize import normalize_text
 from radar_vagas.domain.enums import (
     CareerEventConfirmationStatus,
     CareerEventSource,
@@ -23,6 +25,20 @@ TERMINAL_EVENT_STATUSES = {
     CareerEventConfirmationStatus.DISMISSED,
     CareerEventConfirmationStatus.COMPLETED,
     CareerEventConfirmationStatus.CANCELLED,
+}
+VALID_CONFIRMATION_TRANSITIONS = {
+    CareerEventConfirmationStatus.SUGGESTED: {
+        CareerEventConfirmationStatus.CONFIRMED,
+        CareerEventConfirmationStatus.DISMISSED,
+        CareerEventConfirmationStatus.CANCELLED,
+    },
+    CareerEventConfirmationStatus.CONFIRMED: {
+        CareerEventConfirmationStatus.COMPLETED,
+        CareerEventConfirmationStatus.CANCELLED,
+    },
+    CareerEventConfirmationStatus.DISMISSED: set(),
+    CareerEventConfirmationStatus.COMPLETED: set(),
+    CareerEventConfirmationStatus.CANCELLED: set(),
 }
 
 
@@ -45,28 +61,42 @@ def create_event(
     meeting_url: str | None = None,
     notes: str | None = None,
 ) -> CareerEvent:
-    if event_key is not None:
-        existing = session.scalar(select(CareerEvent).where(CareerEvent.event_key == event_key))
-        if existing is not None:
-            return existing
     job_id = _validated_job_id(session, job_id=job_id, application_id=application_id)
     status = confirmation_status or _default_confirmation_status(source)
-    _validate_confirmation_status(source, status)
+    _validate_initial_confirmation_status(source, status)
     starts_at_utc = _to_utc(starts_at, field_name="starts_at")
     ends_at_utc = _to_utc(ends_at, field_name="ends_at")
     _validate_time_range(starts_at_utc, ends_at_utc)
+    timezone = _validate_timezone(timezone)
     meeting_url = _validate_meeting_url(meeting_url)
     _validate_confidence(confidence)
+    title = _required_text(title, "title")
+    if event_key is not None:
+        existing = session.scalar(select(CareerEvent).where(CareerEvent.event_key == event_key))
+        if existing is not None:
+            _raise_if_event_key_conflicts(
+                existing,
+                event_type=event_type,
+                title=title,
+                job_id=job_id,
+                application_id=application_id,
+                starts_at=starts_at_utc,
+                ends_at=ends_at_utc,
+                all_day=all_day,
+                timezone=timezone,
+                source=source,
+            )
+            return existing
     event = CareerEvent(
         job_id=job_id,
         application_id=application_id,
         event_key=event_key,
         event_type=event_type,
-        title=_required_text(title, "title"),
+        title=title,
         starts_at=starts_at_utc,
         ends_at=ends_at_utc,
         all_day=all_day,
-        timezone=_required_text(timezone, "timezone"),
+        timezone=timezone,
         source=source,
         confidence=confidence,
         confirmation_status=status,
@@ -98,6 +128,18 @@ def update_event(
     source: str = "manual",
 ) -> CareerEvent:
     event = get_event(session, event_id)
+    if event.confirmation_status in TERMINAL_EVENT_STATUSES and _terminal_edit_requested(
+        title=title,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        all_day=all_day,
+        timezone=timezone,
+        location=location,
+        meeting_url=meeting_url,
+        notes=notes,
+        confidence=confidence,
+    ):
+        raise RadarError("Evento terminal nao pode ser editado.")
     previous = _snapshot(event)
     if title is not None:
         event.title = _required_text(title, "title")
@@ -108,7 +150,7 @@ def update_event(
     if all_day is not None:
         event.all_day = all_day
     if timezone is not None:
-        event.timezone = _required_text(timezone, "timezone")
+        event.timezone = _validate_timezone(timezone)
     if location is not _UNSET:
         event.location = _optional_text(location)
     if meeting_url is not _UNSET:
@@ -119,8 +161,8 @@ def update_event(
         _validate_confidence(confidence)
         event.confidence = confidence
     _validate_time_range(event.starts_at, event.ends_at)
-    event.updated_at = utc_now()
     new = _snapshot(event)
+    event.updated_at = utc_now()
     if previous != new:
         audit_event(session, event, "updated", previous=previous, new=new, source=source)
     return event
@@ -152,22 +194,24 @@ def dismiss_event(session: Session, event_id: int, *, source: str = "manual") ->
 
 def complete_event(session: Session, event_id: int, *, source: str = "manual") -> CareerEvent:
     event = get_event(session, event_id)
-    previous = _snapshot(event)
-    event.confirmation_status = CareerEventConfirmationStatus.COMPLETED
-    event.completed_at = utc_now()
-    event.updated_at = utc_now()
-    audit_event(session, event, "completed", previous=previous, new=_snapshot(event), source=source)
-    return event
+    return _set_confirmation_status(
+        session,
+        event,
+        CareerEventConfirmationStatus.COMPLETED,
+        action="completed",
+        source=source,
+    )
 
 
 def cancel_event(session: Session, event_id: int, *, source: str = "manual") -> CareerEvent:
     event = get_event(session, event_id)
-    previous = _snapshot(event)
-    event.confirmation_status = CareerEventConfirmationStatus.CANCELLED
-    event.cancelled_at = utc_now()
-    event.updated_at = utc_now()
-    audit_event(session, event, "cancelled", previous=previous, new=_snapshot(event), source=source)
-    return event
+    return _set_confirmation_status(
+        session,
+        event,
+        CareerEventConfirmationStatus.CANCELLED,
+        action="cancelled",
+        source=source,
+    )
 
 
 def list_upcoming_events(
@@ -257,7 +301,21 @@ def _set_confirmation_status(
     previous = _snapshot(event)
     if event.confirmation_status is status:
         return event
+    allowed = VALID_CONFIRMATION_TRANSITIONS[event.confirmation_status]
+    if status not in allowed:
+        raise RadarError(
+            f"Transicao de agenda invalida: {event.confirmation_status.value} -> {status.value}."
+        )
     event.confirmation_status = status
+    if status is CareerEventConfirmationStatus.COMPLETED:
+        event.completed_at = utc_now()
+        event.cancelled_at = None
+    elif status is CareerEventConfirmationStatus.CANCELLED:
+        event.cancelled_at = utc_now()
+        event.completed_at = None
+    else:
+        event.completed_at = None
+        event.cancelled_at = None
     event.updated_at = utc_now()
     audit_event(session, event, action, previous=previous, new=_snapshot(event), source=source)
     return event
@@ -291,10 +349,12 @@ def _default_confirmation_status(
     )
 
 
-def _validate_confirmation_status(
+def _validate_initial_confirmation_status(
     source: CareerEventSource,
     status: CareerEventConfirmationStatus,
 ) -> None:
+    if status in TERMINAL_EVENT_STATUSES:
+        raise RadarError("Evento nao pode nascer em estado terminal.")
     if source is CareerEventSource.ESTIMATED and status is CareerEventConfirmationStatus.CONFIRMED:
         raise RadarError("Evento estimado nao pode ser confirmado.")
     if source is not CareerEventSource.MANUAL and status is CareerEventConfirmationStatus.CONFIRMED:
@@ -315,6 +375,42 @@ def _validate_time_range(
 ) -> None:
     if starts_at is not None and ends_at is not None and ends_at < starts_at:
         raise RadarError("ends_at nao pode ser anterior a starts_at.")
+
+
+def _terminal_edit_requested(
+    *,
+    title: str | None,
+    starts_at: datetime | None | Any,
+    ends_at: datetime | None | Any,
+    all_day: bool | None,
+    timezone: str | None,
+    location: str | None | Any,
+    meeting_url: str | None | Any,
+    notes: str | None | Any,
+    confidence: float | None | Any,
+) -> bool:
+    return any(
+        [
+            title is not None,
+            starts_at is not _UNSET,
+            ends_at is not _UNSET,
+            all_day is not None,
+            timezone is not None,
+            location is not _UNSET,
+            meeting_url is not _UNSET,
+            notes is not _UNSET,
+            confidence is not _UNSET,
+        ]
+    )
+
+
+def _validate_timezone(value: str) -> str:
+    timezone = _required_text(value, "timezone")
+    try:
+        ZoneInfo(timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise RadarError(f"timezone invalido: {timezone}") from exc
+    return timezone
 
 
 def _validate_meeting_url(value: str | None) -> str | None:
@@ -362,6 +458,45 @@ def _snapshot(event: CareerEvent) -> dict[str, Any]:
         "completed_at": event.completed_at.isoformat() if event.completed_at else None,
         "cancelled_at": event.cancelled_at.isoformat() if event.cancelled_at else None,
     }
+
+
+def _raise_if_event_key_conflicts(
+    event: CareerEvent,
+    *,
+    event_type: CareerEventType,
+    title: str,
+    job_id: int | None,
+    application_id: int | None,
+    starts_at: datetime | None,
+    ends_at: datetime | None,
+    all_day: bool,
+    timezone: str,
+    source: CareerEventSource,
+) -> None:
+    expected = {
+        "event_type": event_type.value,
+        "title": normalize_text(title),
+        "job_id": job_id,
+        "application_id": application_id,
+        "starts_at": starts_at.isoformat() if starts_at else None,
+        "ends_at": ends_at.isoformat() if ends_at else None,
+        "all_day": all_day,
+        "timezone": timezone,
+        "source": source.value,
+    }
+    actual = {
+        "event_type": event.event_type.value,
+        "title": normalize_text(event.title),
+        "job_id": event.job_id,
+        "application_id": event.application_id,
+        "starts_at": event.starts_at.isoformat() if event.starts_at else None,
+        "ends_at": event.ends_at.isoformat() if event.ends_at else None,
+        "all_day": event.all_day,
+        "timezone": event.timezone,
+        "source": event.source.value,
+    }
+    if actual != expected:
+        raise RadarError("event_key ja existe para outro evento de agenda.")
 
 
 def _required_text(value: str, field_name: str) -> str:
