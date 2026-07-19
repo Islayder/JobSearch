@@ -54,6 +54,7 @@ from radar_vagas.persistence.models import (
     Decision,
     Job,
     JobReviewEvent,
+    JobReviewState,
     Posting,
     Source,
 )
@@ -239,6 +240,187 @@ def test_review_transitions_block_invalid_states_and_keep_events_idempotent(
         )
         with pytest.raises(RadarError, match="fechada"):
             mark_seen(session, closed.id)
+
+
+@pytest.mark.parametrize(
+    (
+        "start_state",
+        "start_status",
+        "action",
+        "expected_state",
+        "expected_status",
+        "expected_event",
+    ),
+    [
+        (
+            ReviewState.UNREVIEWED,
+            JobStatus.RECOMMENDED,
+            "seen",
+            ReviewState.SEEN,
+            JobStatus.SEEN,
+            ReviewEventType.SEEN,
+        ),
+        (
+            ReviewState.UNREVIEWED,
+            JobStatus.RECOMMENDED,
+            "shortlist",
+            ReviewState.SHORTLISTED,
+            JobStatus.SEEN,
+            ReviewEventType.SHORTLISTED,
+        ),
+        (
+            ReviewState.UNREVIEWED,
+            JobStatus.RECOMMENDED,
+            "dismiss",
+            ReviewState.DISMISSED,
+            JobStatus.DISMISSED,
+            ReviewEventType.DISMISSED,
+        ),
+        (
+            ReviewState.UNREVIEWED,
+            JobStatus.RECOMMENDED,
+            "applied",
+            ReviewState.APPLIED,
+            JobStatus.APPLIED,
+            ReviewEventType.APPLIED,
+        ),
+        (
+            ReviewState.SEEN,
+            JobStatus.SEEN,
+            "shortlist",
+            ReviewState.SHORTLISTED,
+            JobStatus.SEEN,
+            ReviewEventType.SHORTLISTED,
+        ),
+        (
+            ReviewState.SEEN,
+            JobStatus.SEEN,
+            "dismiss",
+            ReviewState.DISMISSED,
+            JobStatus.DISMISSED,
+            ReviewEventType.DISMISSED,
+        ),
+        (
+            ReviewState.SEEN,
+            JobStatus.SEEN,
+            "applied",
+            ReviewState.APPLIED,
+            JobStatus.APPLIED,
+            ReviewEventType.APPLIED,
+        ),
+        (
+            ReviewState.SHORTLISTED,
+            JobStatus.SEEN,
+            "seen",
+            ReviewState.SEEN,
+            JobStatus.SEEN,
+            ReviewEventType.SEEN,
+        ),
+        (
+            ReviewState.SHORTLISTED,
+            JobStatus.SEEN,
+            "dismiss",
+            ReviewState.DISMISSED,
+            JobStatus.DISMISSED,
+            ReviewEventType.DISMISSED,
+        ),
+        (
+            ReviewState.SHORTLISTED,
+            JobStatus.SEEN,
+            "applied",
+            ReviewState.APPLIED,
+            JobStatus.APPLIED,
+            ReviewEventType.APPLIED,
+        ),
+    ],
+)
+def test_review_policy_valid_transition_matrix(
+    tmp_path: Path,
+    start_state: ReviewState,
+    start_status: JobStatus,
+    action: str,
+    expected_state: ReviewState,
+    expected_status: JobStatus,
+    expected_event: ReviewEventType,
+) -> None:
+    settings = _settings(tmp_path)
+    run_migrations(settings)
+
+    with session_scope(settings) as session:
+        job = _create_job(
+            session,
+            provider_identity_key=f"gupy:valid-{start_state.value}-{action}",
+            status=start_status,
+        )
+        session.add(JobReviewState(job_id=job.id, state=start_state))
+        session.flush()
+
+        _run_review_action(session, settings, job.id, action)
+
+        assert job.status is expected_status
+        assert job.review_state is not None
+        assert job.review_state.state is expected_state
+        assert [event.event_type for event in job.review_events] == [expected_event]
+
+
+@pytest.mark.parametrize(
+    ("start_state", "start_status", "action", "error_match", "with_application"),
+    [
+        (ReviewState.DISMISSED, JobStatus.DISMISSED, "seen", "restore-job", False),
+        (ReviewState.DISMISSED, JobStatus.DISMISSED, "shortlist", "restore-job", False),
+        (ReviewState.DISMISSED, JobStatus.DISMISSED, "applied", "Restaure", False),
+        (ReviewState.APPLIED, JobStatus.APPLIED, "seen", "aplicada", False),
+        (ReviewState.APPLIED, JobStatus.APPLIED, "shortlist", "aplicada", False),
+        (ReviewState.APPLIED, JobStatus.APPLIED, "dismiss", "aplicada", False),
+        (ReviewState.APPLIED, JobStatus.APPLIED, "restore", "aplicada", False),
+        (ReviewState.UNREVIEWED, JobStatus.CLOSED, "seen", "fechada", False),
+        (ReviewState.UNREVIEWED, JobStatus.CLOSED, "shortlist", "fechada", False),
+        (ReviewState.UNREVIEWED, JobStatus.CLOSED, "dismiss", "fechada", False),
+        (ReviewState.UNREVIEWED, JobStatus.CLOSED, "applied", "fechada", False),
+        (ReviewState.UNREVIEWED, JobStatus.CLOSED, "restore", "fechada", False),
+        (ReviewState.UNREVIEWED, JobStatus.EXPIRED, "seen", "expirada", False),
+        (ReviewState.UNREVIEWED, JobStatus.EXPIRED, "shortlist", "expirada", False),
+        (ReviewState.UNREVIEWED, JobStatus.EXPIRED, "dismiss", "expirada", False),
+        (ReviewState.UNREVIEWED, JobStatus.EXPIRED, "applied", "expirada", False),
+        (ReviewState.UNREVIEWED, JobStatus.EXPIRED, "restore", "expirada", False),
+        (ReviewState.UNREVIEWED, JobStatus.RECOMMENDED, "seen", "Candidatura", True),
+        (ReviewState.UNREVIEWED, JobStatus.RECOMMENDED, "shortlist", "Candidatura", True),
+        (ReviewState.UNREVIEWED, JobStatus.RECOMMENDED, "dismiss", "Candidatura", True),
+    ],
+)
+def test_review_policy_invalid_transition_matrix(
+    tmp_path: Path,
+    start_state: ReviewState,
+    start_status: JobStatus,
+    action: str,
+    error_match: str,
+    with_application: bool,
+) -> None:
+    settings = _settings(tmp_path)
+    run_migrations(settings)
+
+    with session_scope(settings) as session:
+        job = _create_job(
+            session,
+            provider_identity_key=f"gupy:invalid-{start_status.value}-{action}",
+            status=start_status,
+        )
+        session.add(JobReviewState(job_id=job.id, state=start_state))
+        if with_application:
+            session.add(
+                Application(
+                    job_id=job.id,
+                    application_key=f"job:{job.id}:existing",
+                    status=ApplicationStatus.SUBMITTED,
+                    stage=ApplicationStage.APPLIED,
+                )
+            )
+        session.flush()
+
+        with pytest.raises(RadarError, match=error_match):
+            _run_review_action(session, settings, job.id, action)
+
+        assert session.scalar(select(func.count(JobReviewEvent.id))) == 0
 
 
 def test_shortlist_can_return_to_seen_without_contradicting_job_status(tmp_path: Path) -> None:
@@ -481,6 +663,30 @@ def _settings(tmp_path: Path) -> Settings:
         database_url=f"sqlite:///{(tmp_path / 'radar.sqlite3').as_posix()}",
         config_dir=PROJECT_ROOT / "config",
     )
+
+
+def _run_review_action(
+    session,
+    settings: Settings,
+    job_id: int,
+    action: str,
+) -> None:
+    if action == "seen":
+        mark_seen(session, job_id)
+        return
+    if action == "shortlist":
+        shortlist_job(session, job_id)
+        return
+    if action == "dismiss":
+        dismiss_job(session, job_id, reason_code="manual", notes="fora de foco")
+        return
+    if action == "applied":
+        mark_applied(session, settings, job_id)
+        return
+    if action == "restore":
+        restore_job(session, settings, job_id)
+        return
+    raise AssertionError(f"acao desconhecida: {action}")
 
 
 def _create_job(
