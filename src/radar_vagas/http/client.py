@@ -11,6 +11,7 @@ import httpx
 
 from radar_vagas.config.schemas import HttpConfig
 from radar_vagas.http.errors import (
+    HttpBudgetExceededError,
     HttpClientError,
     HttpStatusError,
     HttpTimeoutError,
@@ -60,6 +61,72 @@ class HttpRequestResult:
         return self.status_code == 304
 
 
+class HttpRequestBudget:
+    def __init__(
+        self,
+        *,
+        max_requests: int | None = None,
+        max_duration_seconds: float | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if max_requests is not None and max_requests <= 0:
+            raise ValueError("max_requests deve ser positivo.")
+        if max_duration_seconds is not None and max_duration_seconds <= 0:
+            raise ValueError("max_duration_seconds deve ser positivo.")
+        self.max_requests = max_requests
+        self.max_duration_seconds = max_duration_seconds
+        self._monotonic = monotonic
+        self.started_at = monotonic()
+        self._lock = threading.Lock()
+        self.requests_used = 0
+        self.exhausted_by: str | None = None
+
+    @property
+    def elapsed_seconds(self) -> float:
+        return self._monotonic() - self.started_at
+
+    @property
+    def exhausted(self) -> bool:
+        return self.exhausted_by is not None
+
+    def consume_request_attempt(self) -> None:
+        with self._lock:
+            self._raise_if_deadline_reached()
+            if self.max_requests is not None and self.requests_used >= self.max_requests:
+                self.exhausted_by = "max_total_requests"
+                raise HttpBudgetExceededError(
+                    "Orcamento de requests HTTP esgotado.",
+                    limited_by="max_total_requests",
+                )
+            self.requests_used += 1
+
+    def ensure_can_wait(self, seconds: float) -> None:
+        if seconds <= 0 or self.max_duration_seconds is None:
+            return
+        with self._lock:
+            self._raise_if_deadline_reached()
+            if self.elapsed_seconds + seconds > self.max_duration_seconds:
+                self.exhausted_by = "max_duration_seconds"
+                raise HttpBudgetExceededError(
+                    "Orcamento de duracao HTTP seria excedido por uma espera.",
+                    limited_by="max_duration_seconds",
+                )
+
+    def check_deadline(self) -> None:
+        with self._lock:
+            self._raise_if_deadline_reached()
+
+    def _raise_if_deadline_reached(self) -> None:
+        if self.max_duration_seconds is None:
+            return
+        if self.elapsed_seconds >= self.max_duration_seconds:
+            self.exhausted_by = "max_duration_seconds"
+            raise HttpBudgetExceededError(
+                "Orcamento de duracao HTTP esgotado.",
+                limited_by="max_duration_seconds",
+            )
+
+
 class HttpClient:
     def __init__(
         self,
@@ -70,6 +137,7 @@ class HttpClient:
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         minimum_interval_between_requests_seconds: float = 0,
+        request_budget: HttpRequestBudget | None = None,
     ) -> None:
         self.config = config or HttpConfig()
         self.policy = UrlPolicy(
@@ -82,6 +150,7 @@ class HttpClient:
             monotonic=monotonic,
             sleep=sleep,
         )
+        self.request_budget = request_budget
         timeout = httpx.Timeout(
             connect=self.config.connect_timeout_seconds,
             read=self.config.read_timeout_seconds,
@@ -140,13 +209,18 @@ class HttpClient:
                 try:
                     current_url = self.policy.validate_url(current_url)
                     _validate_allowed_host(current_url, allowed_hosts)
-                    self._rate_limiter.wait(current_url)
+                    self._prepare_attempt(current_url)
                     requests_made += 1
                     response = self._send_once(method, current_url, headers=headers)
+                except HttpBudgetExceededError as exc:
+                    exc.requests_made = requests_made
+                    exc.retries = retries
+                    exc.redirects = redirects
+                    raise
                 except httpx.TimeoutException as exc:
                     if method == "GET" and attempt <= self.config.max_retries:
                         retries += 1
-                        self._sleep(
+                        self._sleep_before_retry(
                             retry_delay_seconds(
                                 attempt_index=attempt,
                                 backoff_seconds=self.config.retry_backoff_seconds,
@@ -158,7 +232,7 @@ class HttpClient:
                 except httpx.ConnectError as exc:
                     if method == "GET" and attempt <= self.config.max_retries:
                         retries += 1
-                        self._sleep(
+                        self._sleep_before_retry(
                             retry_delay_seconds(
                                 attempt_index=attempt,
                                 backoff_seconds=self.config.retry_backoff_seconds,
@@ -170,7 +244,7 @@ class HttpClient:
 
                 if _should_retry(method, response.status_code, attempt, self.config.max_retries):
                     retries += 1
-                    self._sleep(
+                    self._sleep_before_retry(
                         retry_delay_seconds(
                             attempt_index=attempt,
                             backoff_seconds=self.config.retry_backoff_seconds,
@@ -255,6 +329,23 @@ class HttpClient:
                 request=response.request,
             )
 
+    def _prepare_attempt(self, url: str) -> None:
+        if self.request_budget is not None:
+            self.request_budget.check_deadline()
+        self._rate_limiter.wait(
+            url,
+            before_sleep=(
+                self.request_budget.ensure_can_wait if self.request_budget is not None else None
+            ),
+        )
+        if self.request_budget is not None:
+            self.request_budget.consume_request_attempt()
+
+    def _sleep_before_retry(self, seconds: float) -> None:
+        if self.request_budget is not None:
+            self.request_budget.ensure_can_wait(seconds)
+        self._sleep(seconds)
+
 
 def cache_request_headers(etag: str | None, last_modified: str | None) -> dict[str, str]:
     headers: dict[str, str] = {}
@@ -279,9 +370,14 @@ class HostRateLimiter:
         self._monotonic = monotonic
         self._sleep = sleep
         self._lock = threading.Lock()
-        self._last_request_at_by_host: dict[str, float] = {}
+        self._next_allowed_at_by_host: dict[str, float] = {}
 
-    def wait(self, url: str) -> None:
+    def wait(
+        self,
+        url: str,
+        *,
+        before_sleep: Callable[[float], None] | None = None,
+    ) -> None:
         if self.minimum_interval_seconds <= 0:
             return
         host = (urlsplit(url).hostname or "").strip(".").lower()
@@ -289,16 +385,14 @@ class HostRateLimiter:
             return
         with self._lock:
             now = self._monotonic()
-            previous = self._last_request_at_by_host.get(host)
-            wait_seconds = (
-                max(0.0, self.minimum_interval_seconds - (now - previous))
-                if previous is not None
-                else 0.0
-            )
-            if wait_seconds > 0:
-                self._sleep(wait_seconds)
-                now = self._monotonic()
-            self._last_request_at_by_host[host] = now
+            next_allowed = self._next_allowed_at_by_host.get(host, now)
+            scheduled_at = max(now, next_allowed)
+            wait_seconds = max(0.0, scheduled_at - now)
+            if wait_seconds > 0 and before_sleep is not None:
+                before_sleep(wait_seconds)
+            self._next_allowed_at_by_host[host] = scheduled_at + self.minimum_interval_seconds
+        if wait_seconds > 0:
+            self._sleep(wait_seconds)
 
 
 def safe_request_log_payload(

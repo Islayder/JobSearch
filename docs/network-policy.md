@@ -19,6 +19,7 @@ Todo coletor deve usar `radar_vagas.http.client.HttpClient`. O cliente aplica:
 - headers de cache.
 - allowlist opcional de hosts por coletor, aplicada tambem a redirects.
 - intervalo minimo por host usando relogio monotonic.
+- orcamento global compartilhado por tentativa HTTP quando usado por plano.
 
 ## SSRF
 
@@ -74,10 +75,17 @@ legado de `minimum_interval_between_requests_seconds`.
 ## Orcamento de Planos
 
 `collect-search-plan` compartilha um unico orcamento entre todas as consultas do
-plano. A execucao para quando atinge qualquer limite configurado ou informado na
-CLI: total de requisicoes, total de itens ou duracao maxima. Quando isso ocorre,
-o relatorio marca a execucao como parcial/truncada e informa o limite que
-interrompeu o plano.
+plano. O limite de requisicoes conta toda tentativa HTTP: primeira tentativa,
+retry, redirect, HEAD e GET. Nenhuma tentativa nova e enviada depois do limite.
+
+O prazo global e conferido antes de request, retry e espera de rate limit. Se o
+prazo seria ultrapassado por uma espera, a coleta e interrompida antes de dormir
+e antes de enviar outra requisicao.
+
+Quando uma consulta termina exatamente no limite, essa consulta permanece
+completa. O plano para antes da proxima consulta. Quando o limite interrompe uma
+consulta em andamento, a execucao fica parcial/truncada e informa
+`budget_limited_by`.
 
 ## Tipos de Conteudo
 
@@ -116,6 +124,10 @@ candidatura.
 `network.yaml` define `max_parallel_requests`, intervalo minimo por host e
 orcamento de planos de busca. A CLI executa de forma conservadora e nao tenta
 contornar bloqueios.
+
+O rate limiter reserva intervalos por host e nao segura um lock global durante a
+espera. Assim, uma espera para `host A` nao bloqueia uma requisicao permitida em
+`host B`.
 
 ## Proibicoes
 

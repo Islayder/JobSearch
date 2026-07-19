@@ -21,6 +21,9 @@ data/exports/*
 data/imports/*
 !data/imports/.gitkeep
 !.gitkeep
+data/resumes/
+data/curricula/
+data/backups/
 
 .env
 *.log
@@ -31,5 +34,11 @@ data/imports/*
 *currículo*
 *resume*
 data/personal/
+config/profile.local.yaml
+config/professional_profile.local.yaml
 config/company_boards.local.yaml
 config/search_queries.local.yaml
+credentials*.json
+token*.json
+*.sqlite
+*.sqlite3

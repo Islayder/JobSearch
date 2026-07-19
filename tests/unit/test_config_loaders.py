@@ -15,7 +15,7 @@ def test_load_profile_yaml(tmp_path: Path) -> None:
     profile.write_text(
         """
 user:
-  preferred_name: Islayder
+  preferred_name: Usuario Teste
   city: Belo Horizonte
   state: MG
   country: Brasil
@@ -30,7 +30,7 @@ opportunity_priority: [internship]
     loaded = load_profile(tmp_path)
 
     assert loaded.used_example is False
-    assert loaded.profile.user.preferred_name == "Islayder"
+    assert loaded.profile.user.preferred_name == "Usuario Teste"
     assert loaded.profile.education.course == "Engenharia de Software"
 
 

@@ -33,6 +33,17 @@ class HttpStatusError(HttpClientError):
     """Raised for non-recoverable HTTP status codes."""
 
 
+class HttpBudgetExceededError(HttpClientError):
+    """Raised when a shared HTTP budget prevents a request attempt."""
+
+    def __init__(self, message: str, *, limited_by: str) -> None:
+        super().__init__(message)
+        self.limited_by = limited_by
+        self.requests_made = 0
+        self.retries = 0
+        self.redirects = 0
+
+
 class RateLimitError(HttpStatusError):
     """Raised when rate limit responses persist after retry."""
 

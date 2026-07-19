@@ -1,8 +1,4 @@
 sources:
-  - name: Gmail
-    slug: gmail
-    source_type: email_alert
-    base_url: null
   - name: Importação manual
     slug: manual-import
     source_type: manual

@@ -10,7 +10,7 @@ from radar_vagas.collectors.gupy.collector import GupyCollector
 from radar_vagas.config.schemas import CollectionConfig, HttpConfig
 from radar_vagas.config.settings import PROJECT_ROOT
 from radar_vagas.domain.enums import CollectionAuthority, EmploymentType, WorkModel
-from radar_vagas.http.client import HttpClient, HttpClientError
+from radar_vagas.http.client import HttpClient, HttpClientError, HttpRequestBudget
 
 
 class FakeResolver:
@@ -89,6 +89,33 @@ def test_gupy_collector_blocks_redirect_outside_allowlist() -> None:
         client.close()
 
 
+def test_gupy_collector_marks_budget_interruption_partial_without_platform_failure() -> None:
+    calls = 0
+    budget = HttpRequestBudget(max_requests=1)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            content=_fixture("page1.json").encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+    client = _client(handler, request_budget=budget)
+    try:
+        result = GupyCollector().collect(_context(client, max_items=10, max_pages=2))
+    finally:
+        client.close()
+
+    assert calls == 1
+    assert result.requests == 1
+    assert result.partial is True
+    assert result.metadata["truncated"] is True
+    assert result.metadata["budget_limited_by"] == "max_total_requests"
+    assert result.recoverable_errors == []
+
+
 def _collect(fixture_names: list[str], *, max_items: int, max_pages: int):
     calls = 0
 
@@ -131,12 +158,13 @@ def _context(
     )
 
 
-def _client(handler) -> HttpClient:
+def _client(handler, *, request_budget: HttpRequestBudget | None = None) -> HttpClient:
     return HttpClient(
         HttpConfig(),
         resolver=FakeResolver(),
         transport=httpx.MockTransport(handler),
         sleep=lambda _seconds: None,
+        request_budget=request_budget,
     )
 
 

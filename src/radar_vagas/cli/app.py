@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, Any, NoReturn
 
 import typer
 from rich.console import Console
@@ -18,6 +18,35 @@ from sqlalchemy import Select, desc, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from radar_vagas.applications.guard import ApplicationGuard
+from radar_vagas.applications.history_import import (
+    ApplicationHistoryImportResult,
+    import_application_history,
+    validate_application_history_file,
+    write_application_history_report,
+)
+from radar_vagas.applications.review import (
+    ReviewQueueRow,
+    add_application_event,
+    current_review_state,
+    shortlist_job,
+)
+from radar_vagas.applications.review import (
+    dismiss_job as dismiss_job_service,
+)
+from radar_vagas.applications.review import (
+    mark_applied as mark_applied_service,
+)
+from radar_vagas.applications.review import (
+    mark_seen as mark_seen_service,
+)
+from radar_vagas.applications.review import (
+    restore_job as restore_job_service,
+)
+from radar_vagas.applications.review import (
+    review_queue as review_queue_service,
+)
+from radar_vagas.canonicalization.normalize import normalize_company_name
 from radar_vagas.collection.orchestrator import (
     build_collection_context,
     load_board_cache_headers,
@@ -42,11 +71,14 @@ from radar_vagas.config.loaders import (
 from radar_vagas.config.schemas import BoardConfig, NetworkConfig, SearchQueryConfig
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
+    ApplicationEventType,
+    ApplicationStatus,
     CollectionAuthority,
     EligibilityStatus,
     EmploymentType,
     JobStatus,
     RelevanceStatus,
+    ReviewState,
     WorkModel,
     parse_enum_value,
 )
@@ -57,7 +89,7 @@ from radar_vagas.eligibility.workflow import (
     evaluate_job_by_id,
     reevaluate_jobs,
 )
-from radar_vagas.http.client import HttpClient
+from radar_vagas.http.client import HttpClient, HttpRequestBudget
 from radar_vagas.ingestion.file_import_service import (
     ImportExecutionResult,
     ImportFileReport,
@@ -69,16 +101,30 @@ from radar_vagas.ingestion.service import import_fixture
 from radar_vagas.persistence.database import session_scope
 from radar_vagas.persistence.migrations import database_display_path, run_migrations
 from radar_vagas.persistence.models import (
+    Application,
     Company,
     CompanyBoard,
     Decision,
     DiscoveryHit,
     ImportItemAudit,
     Job,
+    JobProfileComparison,
+    JobRequirementMatch,
     Posting,
+    ProfessionalProfileVersion,
     SearchQuery,
     Source,
     SourceRun,
+)
+from radar_vagas.profile.service import (
+    ProfileComparisonResult,
+    ProfileImportResult,
+    RequirementCandidate,
+    RequirementEvaluation,
+    compare_job_to_profile,
+    import_professional_profile,
+    latest_comparison_for_job,
+    list_profile_versions,
 )
 from radar_vagas.relevance.service import technologies_from_json
 
@@ -111,14 +157,19 @@ class SearchPlanBudget:
 @dataclass
 class _SearchPlanBudgetState:
     budget: SearchPlanBudget
+    request_budget: HttpRequestBudget | None = None
     started_at: float = 0.0
-    requests_used: int = 0
     items_used: int = 0
     exhausted_by: str | None = None
 
     def __post_init__(self) -> None:
         if self.started_at == 0.0:
             self.started_at = time.monotonic()
+        if self.request_budget is None:
+            self.request_budget = HttpRequestBudget(
+                max_requests=self.budget.max_total_requests,
+                max_duration_seconds=self.budget.max_duration_seconds,
+            )
 
     @property
     def exhausted(self) -> bool:
@@ -138,11 +189,18 @@ class _SearchPlanBudgetState:
 
     @property
     def elapsed_seconds(self) -> float:
+        if self.request_budget is not None:
+            return self.request_budget.elapsed_seconds
         return time.monotonic() - self.started_at
 
+    @property
+    def requests_used(self) -> int:
+        if self.request_budget is not None:
+            return self.request_budget.requests_used
+        return 0
+
     def max_pages_for_query(self, requested: int) -> int:
-        remaining_requests = self.budget.max_total_requests - self.requests_used
-        return min(requested, remaining_requests)
+        return requested
 
     def max_items_for_query(self, requested: int) -> int:
         remaining_items = self.budget.max_total_items - self.items_used
@@ -150,34 +208,22 @@ class _SearchPlanBudgetState:
 
     def record_execution(
         self,
-        query: SearchQueryConfig,
+        _query: SearchQueryConfig,
         execution: CollectionExecutionReport,
     ) -> CollectionExecutionReport:
-        requests = int(execution.network.get("requests", 0) or 0)
         items = execution.summary.found
-        self.requests_used += requests
         self.items_used += items
+        limited_by = execution.metadata.get("budget_limited_by")
+        if isinstance(limited_by, str) and limited_by:
+            self.exhausted_by = limited_by
+            return execution
         if self.requests_used >= self.budget.max_total_requests:
             self.exhausted_by = "max_total_requests"
         elif self.items_used >= self.budget.max_total_items:
             self.exhausted_by = "max_total_items"
         elif self.elapsed_seconds >= self.budget.max_duration_seconds:
             self.exhausted_by = "max_duration_seconds"
-        if self.exhausted_by is None:
-            return execution
-        warning = f"Plano interrompido pelo orcamento: {self.exhausted_by}."
-        metadata = {
-            **execution.metadata,
-            "budget_limited_by": self.exhausted_by,
-            "budget_query_key": query.key,
-            "partial": True,
-            "truncated": True,
-        }
-        return replace(
-            execution,
-            warnings=[*execution.warnings, warning],
-            metadata=metadata,
-        )
+        return execution
 
 
 @app.callback()
@@ -737,7 +783,7 @@ def collect_search_plan_command(
         executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]] = []
         errors: list[str] = []
         budget_state = _SearchPlanBudgetState(budget)
-        client = _http_client(network)
+        client = _http_client(network, request_budget=budget_state.request_budget)
         try:
             for query in queries:
                 if budget_state.should_stop_before_query():
@@ -970,6 +1016,403 @@ def show_job(
     _run(ctx, action)
 
 
+@app.command("import-profile")
+def import_profile_command(
+    ctx: typer.Context,
+    file_path: Annotated[Path, typer.Argument(help="Arquivo local YAML, JSON ou TXT.")],
+    name: Annotated[
+        str | None, typer.Option("--name", help="Nome publico local do perfil.")
+    ] = None,
+    activate: Annotated[
+        bool,
+        typer.Option("--activate/--no-activate", help="Define esta versao como ativa."),
+    ] = True,
+) -> None:
+    """Importa um perfil profissional/curriculo estruturado para o banco local."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            result = import_professional_profile(
+                session,
+                file_path,
+                profile_name=name,
+                activate=activate,
+            )
+            session.flush()
+            _print_profile_import_result(result)
+
+    _run(ctx, action)
+
+
+@app.command("profiles")
+def profiles_command(ctx: typer.Context) -> None:
+    """Lista versoes de perfil profissional importadas localmente."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            _print_profiles(list_profile_versions(session))
+
+    _run(ctx, action)
+
+
+@app.command("show-profile")
+def show_profile_command(
+    ctx: typer.Context,
+    profile_version_id: Annotated[int, typer.Argument(help="ID da versao do perfil.")],
+) -> None:
+    """Mostra resumo estruturado de uma versao do perfil."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            version = session.get(ProfessionalProfileVersion, profile_version_id)
+            if version is None:
+                raise RadarError(f"Versao de perfil nao encontrada: {profile_version_id}")
+            _print_profile_detail(version)
+
+    _run(ctx, action)
+
+
+@app.command("compare-profile")
+def compare_profile_command(
+    ctx: typer.Context,
+    job_id: Annotated[int, typer.Argument(help="ID da vaga.")],
+    profile_version_id: Annotated[
+        int | None,
+        typer.Option("--profile-version-id", help="Versao do perfil. Usa a ativa por padrao."),
+    ] = None,
+) -> None:
+    """Compara uma vaga com o perfil ativo e grava a analise explicavel."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            result = compare_job_to_profile(
+                session,
+                job_id,
+                profile_version_id=profile_version_id,
+            )
+            _print_profile_comparison(result)
+
+    _run(ctx, action)
+
+
+@app.command("show-compatibility")
+def show_compatibility_command(
+    ctx: typer.Context,
+    job_id: Annotated[int, typer.Argument(help="ID da vaga.")],
+) -> None:
+    """Mostra a compatibilidade mais recente gravada para uma vaga."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            comparison = latest_comparison_for_job(session, job_id)
+            if comparison is None:
+                raise RadarError("Nenhuma comparacao encontrada. Execute compare-profile.")
+            _print_stored_profile_comparison(comparison)
+
+    _run(ctx, action)
+
+
+@app.command("review-queue")
+def review_queue_command(
+    ctx: typer.Context,
+    status: Annotated[str | None, typer.Option("--status", help="Filtra por JobStatus.")] = None,
+    review_state: Annotated[
+        str | None, typer.Option("--review-state", help="Filtra por estado de revisao.")
+    ] = None,
+    provider: Annotated[str | None, typer.Option("--provider", help="Filtra por provider.")] = None,
+    employment_type: Annotated[
+        str | None, typer.Option("--employment-type", help="Filtra por vinculo.")
+    ] = None,
+    work_model: Annotated[
+        str | None, typer.Option("--work-model", help="Filtra por modalidade.")
+    ] = None,
+    relevance_status: Annotated[
+        str | None, typer.Option("--relevance-status", help="Filtra por relevancia.")
+    ] = None,
+    min_score: Annotated[int | None, typer.Option("--min-score", help="Ranking minimo.")] = None,
+    query_key: Annotated[
+        str | None, typer.Option("--query-key", help="Filtra por consulta de descoberta.")
+    ] = None,
+    company: Annotated[str | None, typer.Option("--company", help="Filtra por empresa.")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Limite positivo.")] = 50,
+    sort: Annotated[
+        str, typer.Option("--sort", help="Ordenacao: score, newest ou first-seen.")
+    ] = "score",
+) -> None:
+    """Mostra a fila de revisao humana, sem imprimir descricoes integrais."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        rows = _review_queue_rows(
+            settings,
+            status=status,
+            review_state=review_state,
+            provider=provider,
+            employment_type=employment_type,
+            work_model=work_model,
+            relevance_status=relevance_status,
+            min_score=min_score,
+            query_key=query_key,
+            company=company,
+            limit=limit,
+            sort=sort,
+        )
+        _print_review_queue(rows)
+
+    _run(ctx, action)
+
+
+@app.command("mark-seen")
+def mark_seen_command(
+    ctx: typer.Context,
+    job_id: Annotated[int, typer.Argument(help="ID da vaga.")],
+) -> None:
+    """Marca uma vaga como vista sem criar candidatura."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            state = mark_seen_service(session, job_id)
+            console.print(f"Vaga {job_id} marcada como {state.state.value.lower()}.")
+
+    _run(ctx, action)
+
+
+@app.command("shortlist")
+def shortlist_command(
+    ctx: typer.Context,
+    job_id: Annotated[int, typer.Argument(help="ID da vaga.")],
+) -> None:
+    """Coloca uma vaga na shortlist sem criar candidatura."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            state = shortlist_job(session, job_id)
+            console.print(f"Vaga {job_id} marcada como {state.state.value.lower()}.")
+
+    _run(ctx, action)
+
+
+@app.command("dismiss-job")
+def dismiss_job_command(
+    ctx: typer.Context,
+    job_id: Annotated[int, typer.Argument(help="ID da vaga.")],
+    reason: Annotated[str | None, typer.Option("--reason", help="Motivo curto.")] = None,
+    notes: Annotated[str | None, typer.Option("--notes", help="Notas locais opcionais.")] = None,
+) -> None:
+    """Descarta uma vaga com evento auditavel e sem criar candidatura."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            state = dismiss_job_service(session, job_id, reason_code=reason, notes=notes)
+            console.print(f"Vaga {job_id} descartada: {state.state.value.lower()}.")
+
+    _run(ctx, action)
+
+
+@app.command("restore-job")
+def restore_job_command(
+    ctx: typer.Context,
+    job_id: Annotated[int, typer.Argument(help="ID da vaga.")],
+) -> None:
+    """Restaura descarte manual e recalcula o estado pelas regras atuais."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            job = restore_job_service(session, settings, job_id)
+            console.print(f"Vaga {job_id} restaurada para {job.status.value.lower()}.")
+
+    _run(ctx, action)
+
+
+@app.command("mark-applied")
+def mark_applied_command(
+    ctx: typer.Context,
+    job_id: Annotated[int, typer.Argument(help="ID da vaga.")],
+    applied_at: Annotated[
+        str | None, typer.Option("--applied-at", help="Data ISO da candidatura.")
+    ] = None,
+    platform: Annotated[str | None, typer.Option("--platform", help="Plataforma.")] = None,
+    external_reference: Annotated[
+        str | None, typer.Option("--external-reference", help="Referencia externa.")
+    ] = None,
+    notes: Annotated[str | None, typer.Option("--notes", help="Notas locais opcionais.")] = None,
+    application_url: Annotated[
+        str | None, typer.Option("--application-url", help="URL publica da vaga.")
+    ] = None,
+) -> None:
+    """Registra manualmente uma candidatura sem acessar a URL."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            application = mark_applied_service(
+                session,
+                settings,
+                job_id,
+                applied_at=_parse_datetime_option(applied_at, "--applied-at"),
+                platform=platform,
+                external_reference=external_reference,
+                notes=notes,
+                application_url=application_url,
+            )
+            session.flush()
+            console.print(f"Candidatura registrada: {application.id}.")
+
+    _run(ctx, action)
+
+
+@app.command("applications")
+def applications_command(
+    ctx: typer.Context,
+    status: Annotated[
+        str | None, typer.Option("--status", help="Filtra por status da candidatura.")
+    ] = None,
+    platform: Annotated[
+        str | None,
+        typer.Option("--platform", help="Filtra por plataforma."),
+    ] = None,
+    company: Annotated[str | None, typer.Option("--company", help="Filtra por empresa.")] = None,
+    after: Annotated[str | None, typer.Option("--after", help="Data minima ISO.")] = None,
+    before: Annotated[str | None, typer.Option("--before", help="Data maxima ISO.")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Limite positivo.")] = 50,
+    sort: Annotated[str, typer.Option("--sort", help="newest, oldest ou company.")] = "newest",
+) -> None:
+    """Lista candidaturas registradas localmente."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            rows = _query_applications(
+                session,
+                status=parse_enum_value(ApplicationStatus, status) if status else None,
+                platform=platform,
+                company=company,
+                after=_parse_datetime_option(after, "--after"),
+                before=_parse_datetime_option(before, "--before"),
+                limit=limit,
+                sort=sort,
+            )
+            _print_applications(rows)
+
+    _run(ctx, action)
+
+
+@app.command("show-application")
+def show_application_command(
+    ctx: typer.Context,
+    application_id: Annotated[int, typer.Argument(help="ID da candidatura.")],
+) -> None:
+    """Mostra candidatura e eventos locais."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            application = session.get(Application, application_id)
+            if application is None:
+                raise RadarError(f"Candidatura nao encontrada: {application_id}")
+            _print_application_detail(application)
+
+    _run(ctx, action)
+
+
+@app.command("application-event")
+def application_event_command(
+    ctx: typer.Context,
+    application_id: Annotated[int, typer.Argument(help="ID da candidatura.")],
+    event_type: Annotated[str, typer.Option("--type", help="Tipo do evento.")],
+    occurred_at: Annotated[
+        str | None, typer.Option("--occurred-at", help="Data ISO do evento.")
+    ] = None,
+    notes: Annotated[str | None, typer.Option("--notes", help="Notas locais opcionais.")] = None,
+) -> None:
+    """Registra evento manual de candidatura."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            event = add_application_event(
+                session,
+                application_id,
+                event_type=parse_enum_value(ApplicationEventType, event_type),
+                occurred_at=_parse_datetime_option(occurred_at, "--occurred-at"),
+                notes=notes,
+            )
+            session.flush()
+            console.print(f"Evento registrado: {event.id}.")
+
+    _run(ctx, action)
+
+
+@app.command("validate-application-history")
+def validate_application_history_command(
+    ctx: typer.Context,
+    file_path: Annotated[Path, typer.Argument(help="Arquivo JSON ou CSV.")],
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Mantido por compatibilidade.")] = True,
+    report: Annotated[Path | None, typer.Option("--report", help="Relatorio JSON.")] = None,
+    delimiter: Annotated[str | None, typer.Option("--delimiter", help="Delimitador CSV.")] = None,
+    allow_probable_matches: Annotated[
+        bool,
+        typer.Option("--allow-probable-matches", help="Aceita provaveis no import."),
+    ] = False,
+) -> None:
+    """Valida arquivo de historico sem escrever no banco."""
+
+    def action() -> None:
+        _ = ctx
+        _ = dry_run
+        result = validate_application_history_file(
+            file_path,
+            delimiter=delimiter,
+            allow_probable_matches=allow_probable_matches,
+        )
+        if report is not None:
+            write_application_history_report(result, report)
+        _print_application_history_result(result)
+
+    _run(ctx, action)
+
+
+@app.command("import-application-history")
+def import_application_history_command(
+    ctx: typer.Context,
+    file_path: Annotated[Path, typer.Argument(help="Arquivo JSON ou CSV.")],
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Simula sem escrever.")] = False,
+    report: Annotated[Path | None, typer.Option("--report", help="Relatorio JSON.")] = None,
+    delimiter: Annotated[str | None, typer.Option("--delimiter", help="Delimitador CSV.")] = None,
+    allow_probable_matches: Annotated[
+        bool,
+        typer.Option("--allow-probable-matches", help="Permite link provavel."),
+    ] = False,
+) -> None:
+    """Importa historico local sem inventar vagas ou publicacoes."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            result = import_application_history(
+                session,
+                settings,
+                file_path,
+                dry_run=dry_run,
+                delimiter=delimiter,
+                allow_probable_matches=allow_probable_matches,
+            )
+        if report is not None:
+            write_application_history_report(result, report)
+        _print_application_history_result(result)
+
+    _run(ctx, action)
+
+
 @app.command("stats")
 def stats(ctx: typer.Context) -> None:
     """Mostra resumo do banco."""
@@ -1059,16 +1502,23 @@ def _apply_command_debug(ctx: typer.Context, debug: bool) -> None:
         ctx.obj = CliState(debug=True)
 
 
-def _http_client(network: NetworkConfig) -> HttpClient:
+def _http_client(
+    network: NetworkConfig,
+    *,
+    request_budget: HttpRequestBudget | None = None,
+) -> HttpClient:
     try:
         return HttpClient(
             network.http,
             minimum_interval_between_requests_seconds=(
                 network.collection.minimum_interval_between_requests_seconds
             ),
+            request_budget=request_budget,
         )
     except TypeError as exc:
-        if "minimum_interval_between_requests_seconds" not in str(exc):
+        if "minimum_interval_between_requests_seconds" not in str(
+            exc
+        ) and "request_budget" not in str(exc):
             raise
         return HttpClient(network.http)
 
@@ -1267,6 +1717,15 @@ def _parse_optional_datetime(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError as exc:
         raise RadarError(f"Data invalida em --since: {value}") from exc
+
+
+def _parse_datetime_option(value: str | None, label: str) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise RadarError(f"Data invalida em {label}: {value}") from exc
 
 
 def _filtered_boards(
@@ -1727,6 +2186,350 @@ def _print_jobs_table(rows: list[tuple[Job, Company, Decision | None]]) -> None:
         console.print("Nenhuma vaga encontrada para os filtros informados.")
 
 
+def _review_queue_rows(
+    settings: Settings,
+    *,
+    status: str | None,
+    review_state: str | None,
+    provider: str | None,
+    employment_type: str | None,
+    work_model: str | None,
+    relevance_status: str | None,
+    min_score: int | None,
+    query_key: str | None,
+    company: str | None,
+    limit: int,
+    sort: str,
+) -> list[ReviewQueueRow]:
+    with session_scope(settings) as session:
+        return review_queue_service(
+            session,
+            status=parse_enum_value(JobStatus, status) if status else None,
+            review_state=parse_enum_value(ReviewState, review_state) if review_state else None,
+            provider=provider,
+            employment_type=(
+                parse_enum_value(EmploymentType, employment_type) if employment_type else None
+            ),
+            work_model=parse_enum_value(WorkModel, work_model) if work_model else None,
+            relevance_status=(
+                parse_enum_value(RelevanceStatus, relevance_status) if relevance_status else None
+            ),
+            min_score=min_score,
+            query_key=query_key,
+            company=company,
+            limit=limit,
+            sort=sort,
+        )
+
+
+def _print_review_queue(rows: list[ReviewQueueRow]) -> None:
+    table = Table(title="Fila de revisão")
+    table.add_column("ID", justify="right")
+    table.add_column("Empresa")
+    table.add_column("Título")
+    table.add_column("Vínculo")
+    table.add_column("Modalidade")
+    table.add_column("Localização")
+    table.add_column("Relevância")
+    table.add_column("Ranking", justify="right")
+    table.add_column("Revisão")
+    table.add_column("JobStatus")
+    table.add_column("Aplicação")
+    table.add_column("Queries", justify="right")
+    table.add_column("URL")
+    for row in rows:
+        decision = row.decision
+        table.add_row(
+            str(row.job.id),
+            row.company.canonical_name,
+            row.job.canonical_title,
+            row.job.employment_type.value.lower(),
+            row.job.work_model.value.lower(),
+            _location_label(row.job),
+            (
+                decision.relevance_status.value.lower()
+                if decision and decision.relevance_status
+                else "-"
+            ),
+            (
+                "-"
+                if decision is None or decision.ranking_score is None
+                else str(decision.ranking_score)
+            ),
+            row.review_state.value.lower(),
+            row.job.status.value.lower(),
+            "-" if row.application is None else str(row.application.id),
+            str(row.query_count),
+            row.job.application_url or "-",
+        )
+    if rows:
+        console.print(table)
+    else:
+        console.print("Nenhuma vaga encontrada na fila de revisão.")
+
+
+def _query_applications(
+    session: Session,
+    *,
+    status: ApplicationStatus | None,
+    platform: str | None,
+    company: str | None,
+    after: datetime | None,
+    before: datetime | None,
+    limit: int,
+    sort: str,
+) -> list[Application]:
+    if limit <= 0:
+        raise RadarError("--limit deve ser um inteiro positivo.")
+    if sort not in {"newest", "oldest", "company"}:
+        raise RadarError("--sort deve ser newest, oldest ou company.")
+    statement = select(Application).join(Job).join(Company)
+    if status is not None:
+        statement = statement.where(Application.status == status)
+    if platform is not None:
+        statement = statement.where(Application.platform == platform.strip().lower())
+    if company is not None:
+        statement = statement.where(
+            Company.normalized_name.contains(normalize_company_name(company))
+        )
+    if after is not None:
+        statement = statement.where(Application.applied_at >= after)
+    if before is not None:
+        statement = statement.where(Application.applied_at <= before)
+    if sort == "newest":
+        statement = statement.order_by(desc(Application.applied_at), desc(Application.created_at))
+    elif sort == "oldest":
+        statement = statement.order_by(Application.applied_at.asc(), Application.created_at.asc())
+    else:
+        statement = statement.order_by(Company.canonical_name.asc(), Application.id.asc())
+    return list(session.scalars(statement.limit(limit)).all())
+
+
+def _print_applications(applications: list[Application]) -> None:
+    table = Table(title="Candidaturas")
+    table.add_column("ID", justify="right")
+    table.add_column("Vaga", justify="right")
+    table.add_column("Empresa")
+    table.add_column("Título")
+    table.add_column("Status")
+    table.add_column("Etapa")
+    table.add_column("Plataforma")
+    table.add_column("Aplicada em")
+    table.add_column("Referência")
+    for application in applications:
+        table.add_row(
+            str(application.id),
+            str(application.job_id),
+            application.job.company.canonical_name,
+            application.job.canonical_title,
+            application.status.value.lower(),
+            application.stage.value.lower() if application.stage else "-",
+            application.platform or "-",
+            _date_or_dash(application.applied_at),
+            application.external_reference or "-",
+        )
+    if applications:
+        console.print(table)
+    else:
+        console.print("Nenhuma candidatura registrada.")
+
+
+def _print_profile_import_result(result: ProfileImportResult) -> None:
+    table = Table(title="Perfil profissional importado")
+    table.add_column("Campo")
+    table.add_column("Valor")
+    table.add_row("Perfil", result.profile_name)
+    table.add_row("ID do perfil", str(result.profile_id))
+    table.add_row("Versao", str(result.version_number))
+    table.add_row("ID da versao", str(result.profile_version_id))
+    table.add_row("Nova versao", "sim" if result.created_version else "nao")
+    table.add_row("Hash", result.content_hash)
+    table.add_row("Origem local", str(result.source_path))
+    console.print(table)
+
+
+def _print_profiles(versions: list[ProfessionalProfileVersion]) -> None:
+    table = Table(title="Perfis profissionais")
+    table.add_column("Versao ID", justify="right")
+    table.add_column("Perfil")
+    table.add_column("Versao", justify="right")
+    table.add_column("Ativa")
+    table.add_column("Resumo")
+    table.add_column("Origem")
+    for version in versions:
+        table.add_row(
+            str(version.id),
+            version.profile.name,
+            str(version.version_number),
+            "sim" if version.is_active else "nao",
+            version.headline or version.summary or "-",
+            version.source_path or "-",
+        )
+    if versions:
+        console.print(table)
+    else:
+        console.print("Nenhum perfil profissional importado.")
+
+
+def _print_profile_detail(version: ProfessionalProfileVersion) -> None:
+    details = Table(title="Perfil profissional")
+    details.add_column("Campo")
+    details.add_column("Valor")
+    details.add_row("ID da versao", str(version.id))
+    details.add_row("Perfil", version.profile.name)
+    details.add_row("Versao", str(version.version_number))
+    details.add_row("Ativa", "sim" if version.is_active else "nao")
+    details.add_row("Headline", version.headline or "-")
+    details.add_row("Resumo", version.summary or "-")
+    details.add_row("Habilidades", str(len(version.skills)))
+    details.add_row("Evidencias", str(len(version.evidences)))
+    details.add_row("Experiencias", str(len(version.experiences)))
+    details.add_row("Projetos", str(len(version.projects)))
+    details.add_row("Formacao", str(len(version.education)))
+    details.add_row("Idiomas", str(len(version.languages)))
+    console.print(details)
+
+    skills = Table(title="Habilidades")
+    skills.add_column("Nome")
+    skills.add_column("Categoria")
+    skills.add_column("Nivel")
+    skills.add_column("Evidencias", justify="right")
+    for skill in version.skills:
+        skills.add_row(
+            skill.name,
+            skill.category or "-",
+            skill.level or "-",
+            str(len(skill.evidences)),
+        )
+    if version.skills:
+        console.print(skills)
+
+
+def _print_profile_comparison(result: ProfileComparisonResult) -> None:
+    details = Table(title="Compatibilidade")
+    details.add_column("Campo")
+    details.add_column("Valor")
+    details.add_row("Vaga", str(result.job_id))
+    details.add_row("Versao do perfil", str(result.profile_version_id))
+    details.add_row("Score", f"{result.overall_score}/100")
+    details.add_row("Resumo", result.summary)
+    if result.attention_points:
+        details.add_row("Pontos de atencao", "; ".join(result.attention_points))
+    console.print(details)
+
+    requirements = Table(title="Requisitos")
+    requirements.add_column("Tipo")
+    requirements.add_column("Status")
+    requirements.add_column("Requisito")
+    requirements.add_column("Evidencias", justify="right")
+    requirements.add_column("Explicacao")
+    for item in result.requirements:
+        requirements.add_row(
+            item.requirement.kind.value.lower(),
+            item.status.value.lower(),
+            item.requirement.text,
+            str(len(item.evidence)),
+            item.explanation,
+        )
+    console.print(requirements)
+
+
+def _print_stored_profile_comparison(comparison: JobProfileComparison) -> None:
+    result = ProfileComparisonResult(
+        comparison_id=comparison.id,
+        job_id=comparison.job_id,
+        profile_version_id=comparison.profile_version_id,
+        overall_score=comparison.overall_score,
+        summary=comparison.summary,
+        attention_points=[str(item) for item in _json_list(comparison.attention_points_json)],
+        requirements=[
+            _stored_requirement_to_result(item) for item in comparison.requirement_matches
+        ],
+    )
+    _print_profile_comparison(result)
+
+
+def _stored_requirement_to_result(item: JobRequirementMatch) -> RequirementEvaluation:
+    return RequirementEvaluation(
+        requirement=RequirementCandidate(
+            text=item.requirement_text,
+            kind=item.requirement_kind,
+        ),
+        status=item.match_status,
+        evidence=_json_dict_list(item.evidence_json),
+        explanation=item.explanation,
+        weight=item.weight,
+    )
+
+
+def _json_list(value: str) -> list[Any]:
+    decoded = json.loads(value)
+    return decoded if isinstance(decoded, list) else []
+
+
+def _json_dict_list(value: str) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    for item in _json_list(value):
+        if isinstance(item, dict):
+            result.append({str(key): str(nested) for key, nested in item.items()})
+    return result
+
+
+def _print_application_detail(application: Application) -> None:
+    details = Table(title="Candidatura")
+    details.add_column("Campo")
+    details.add_column("Valor")
+    details.add_row("ID", str(application.id))
+    details.add_row("Vaga", str(application.job_id))
+    details.add_row("Empresa", application.job.company.canonical_name)
+    details.add_row("Título", application.job.canonical_title)
+    details.add_row("Status", application.status.value.lower())
+    details.add_row("Etapa", application.stage.value.lower() if application.stage else "-")
+    details.add_row("Plataforma", application.platform or "-")
+    details.add_row("Aplicada em", _date_or_dash(application.applied_at))
+    details.add_row("Referência", application.external_reference or "-")
+    details.add_row(
+        "URL pública",
+        application.application_url or application.job.application_url or "-",
+    )
+    console.print(details)
+
+    events = Table(title="Eventos")
+    events.add_column("ID", justify="right")
+    events.add_column("Tipo")
+    events.add_column("Quando")
+    events.add_column("Fonte")
+    events.add_column("Notas")
+    for event in sorted(application.events, key=lambda value: value.occurred_at):
+        events.add_row(
+            str(event.id),
+            event.event_type.value.lower(),
+            _date_or_dash(event.occurred_at),
+            event.source,
+            event.notes or "-",
+        )
+    if not application.events:
+        events.add_row("-", "-", "-", "-", "-")
+    console.print(events)
+
+
+def _print_application_history_result(result: ApplicationHistoryImportResult) -> None:
+    table = Table(title="Histórico de candidaturas")
+    table.add_column("Métrica")
+    table.add_column("Valor", justify="right")
+    table.add_row("Dry-run", "sim" if result.dry_run else "não")
+    table.add_row("Total", str(result.total))
+    table.add_row("Válidos", str(result.valid))
+    table.add_row("Inválidos", str(result.invalid))
+    table.add_row("Ligados", str(result.linked))
+    table.add_row("Prováveis", str(result.probable))
+    table.add_row("Sem match", str(result.unmatched))
+    table.add_row("Conflitos", str(result.conflicts))
+    table.add_row("Candidaturas criadas", str(result.created_applications))
+    table.add_row("Candidaturas atualizadas", str(result.updated_applications))
+    console.print(table)
+
+
 def _print_job_detail(job: Job) -> None:
     decision = job.decision
     details = Table.grid(padding=(0, 2))
@@ -1743,6 +2546,12 @@ def _print_job_detail(job: Job) -> None:
     details.add_row("Departamento", job.department or "-")
     details.add_row("Área", job.area or "-")
     details.add_row("Tecnologias", ", ".join(_job_technologies(job)) or "-")
+    details.add_row("Revisão", current_review_state(job).value.lower())
+    guard = ApplicationGuard().evaluate(job)
+    details.add_row("Guarda candidatura", guard.decision.value.lower())
+    latest_profile_comparison = _latest_profile_comparison_label(job)
+    if latest_profile_comparison is not None:
+        details.add_row("Compatibilidade", latest_profile_comparison)
     details.add_row("Curso", job.course_requirement or "-")
     console.print(Panel(details, title="Vaga canônica"))
 
@@ -2306,6 +3115,16 @@ def _job_technologies(job: Job) -> list[str]:
     return list(technologies_from_json(job.technologies_json))
 
 
+def _latest_profile_comparison_label(job: Job) -> str | None:
+    if not job.profile_comparisons:
+        return None
+    comparison = max(
+        job.profile_comparisons,
+        key=lambda value: (value.created_at, value.id),
+    )
+    return f"{comparison.overall_score}/100 (perfil {comparison.profile_version_id})"
+
+
 def _relevance_summary_label(decision: Decision) -> str:
     if not decision.relevance_reason_json:
         return "-"
@@ -2391,7 +3210,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0006_relevance_consistency_and_observations":
+    if version == "0008_professional_profile_and_tracking":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 

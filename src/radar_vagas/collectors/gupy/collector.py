@@ -7,6 +7,7 @@ from urllib.parse import urlencode, urlsplit
 from radar_vagas.collection.contracts import CollectionContext, CollectionResult, CollectorError
 from radar_vagas.collectors.common import as_text, is_public_http_url_syntax
 from radar_vagas.collectors.gupy.mapping import map_gupy_job
+from radar_vagas.http.errors import HttpBudgetExceededError
 from radar_vagas.ingestion.import_schema import ImportedPosting
 
 PUBLIC_PORTAL_HOST = "employability-portal.gupy.io"
@@ -56,6 +57,7 @@ class GupyCollector:
         offset = 0
         truncated = False
         repeated_page = False
+        budget_limited_by: str | None = None
         seen_page_signatures: set[tuple[str, ...]] = set()
         seen_provider_keys: set[str] = set()
 
@@ -66,7 +68,15 @@ class GupyCollector:
                 break
             limit = min(PAGE_SIZE, remaining)
             url = _portal_url(search_text=search_text, limit=limit, offset=offset)
-            response = context.http_client.get(url, allowed_hosts=(PUBLIC_PORTAL_HOST,))
+            try:
+                response = context.http_client.get(url, allowed_hosts=(PUBLIC_PORTAL_HOST,))
+            except HttpBudgetExceededError as exc:
+                requests += exc.requests_made
+                retries += exc.retries
+                truncated = True
+                budget_limited_by = exc.limited_by
+                warnings.append(f"Consulta interrompida pelo orcamento: {exc.limited_by}.")
+                break
             requests += response.requests_made
             bytes_received += response.bytes_received
             retries += response.retries
@@ -163,6 +173,7 @@ class GupyCollector:
                 "total_available": total_available,
                 "truncated": truncated,
                 "repeated_page": repeated_page,
+                "budget_limited_by": budget_limited_by,
                 "retries": retries,
                 "hydrate_details": False,
                 "public_interface": "portal_public_get",

@@ -67,27 +67,54 @@ Relevancia profissional afeta a transicao inicial: `UNRELATED` leva a
 seguem elegibilidade e ranking. Incompatibilidades de empresa, localidade, tipo
 e candidatura anterior prevalecem.
 
+## Revisao Manual
+
+```mermaid
+stateDiagram-v2
+    [*] --> UNREVIEWED
+    UNREVIEWED --> SEEN
+    UNREVIEWED --> SHORTLISTED
+    UNREVIEWED --> DISMISSED
+    SEEN --> SHORTLISTED
+    SEEN --> DISMISSED
+    SHORTLISTED --> DISMISSED
+    DISMISSED --> UNREVIEWED: restore-job
+    UNREVIEWED --> APPLIED
+    SEEN --> APPLIED
+    SHORTLISTED --> APPLIED
+```
+
+`JobReviewState` e o estado atual. `JobReviewEvent` e append-only e guarda a
+origem manual da mudanca. `restore-job` reavalia a vaga com as regras atuais,
+mas nao restaura vagas `APPLIED` ou `CLOSED`.
+
 ## Candidatura
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PREPARING
-    PREPARING --> AWAITING_REVIEW
-    AWAITING_REVIEW --> READY
-    READY --> SUBMITTED
-    SUBMITTED --> TEST
-    SUBMITTED --> INTERVIEW
-    TEST --> INTERVIEW
-    INTERVIEW --> FINAL_STAGE
-    FINAL_STAGE --> OFFER
-    SUBMITTED --> REJECTED
-    TEST --> REJECTED
-    INTERVIEW --> REJECTED
-    OFFER --> CLOSED
-    REJECTED --> CLOSED
-    PREPARING --> WITHDRAWN
-    WITHDRAWN --> CLOSED
+    [*] --> APPLIED
+    APPLIED --> AWAITING_UPDATE
+    AWAITING_UPDATE --> ASSESSMENT_RECEIVED
+    ASSESSMENT_RECEIVED --> ASSESSMENT_COMPLETED
+    AWAITING_UPDATE --> CASE_RECEIVED
+    CASE_RECEIVED --> CASE_SUBMITTED
+    AWAITING_UPDATE --> INTERVIEW_SCHEDULED
+    CASE_SUBMITTED --> INTERVIEW_SCHEDULED
+    ASSESSMENT_COMPLETED --> INTERVIEW_SCHEDULED
+    INTERVIEW_SCHEDULED --> INTERVIEW_COMPLETED
+    INTERVIEW_COMPLETED --> OFFER_RECEIVED
+    APPLIED --> REJECTED
+    AWAITING_UPDATE --> REJECTED
+    ASSESSMENT_COMPLETED --> REJECTED
+    INTERVIEW_COMPLETED --> REJECTED
+    APPLIED --> WITHDRAWN
+    AWAITING_UPDATE --> WITHDRAWN
 ```
 
 A candidatura automatica e proibida nesta versao. O estado existe para rastrear
-acoes humanas e preparar futuras integracoes controladas.
+acoes humanas feitas fora do Radar.
+
+Eventos manuais ou importados atualizam o resumo da candidatura, mas nao abrem
+links externos e nao executam candidatura em plataforma. `SUBMITTED` registra
+que o usuario aplicou fora do Radar; `CONFIRMATION_RECEIVED` e eventos
+posteriores acompanham o processo.

@@ -8,19 +8,13 @@ status, notas e eventos, mas não envia candidaturas.
 ## Currículo
 
 Não invente experiências, cursos, cargos, resultados, datas ou habilidades. A
-estrutura de currículo existe apenas para persistência futura e não gera arquivos
-nesta etapa.
+estrutura de curriculo pode ser importada localmente e versionada, mas o Radar
+nao gera arquivo novo, nao envia curriculo e nao preenche formulario.
 
 ## Duplicidade
 
 Quando houver candidatura ativa ou encerrada para uma vaga, o sistema não deve
 recomendar nova candidatura. O acompanhamento existente deve ser preservado.
-
-## E-mail
-
-Integração com Gmail ou outros provedores pode ser adicionada futuramente para
-classificar mensagens e atualizar eventos de candidatura. Esta versão não acessa
-e-mails.
 
 ## Automação Futura
 

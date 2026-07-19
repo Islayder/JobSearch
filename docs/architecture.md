@@ -15,11 +15,14 @@ SQLite como banco e separa camadas por responsabilidade:
 - Elegibilidade: regras puras e testaveis.
 - Relevancia: classificacao deterministica de area profissional.
 - Ranking: pontuacao deterministica e explicavel.
+- Perfil profissional: importacao local versionada e evidencias.
+- Compatibilidade: comparacao explicavel entre vaga e curriculo.
+- Revisao e candidaturas: fila manual, guardas e historico local.
 - Persistencia: SQLAlchemy, sessoes, modelos e migracoes Alembic.
 
 ```mermaid
 flowchart LR
-    A["JSON/CSV local"] --> C["Ingestao"]
+    L["JSON/CSV local"] --> C["Ingestao"]
     B["Coletores publicos"] --> H["HTTP seguro"]
     H --> C
     C --> D["Normalizacao"]
@@ -27,7 +30,11 @@ flowchart LR
     E --> F["SQLite"]
     F --> G["Elegibilidade"]
     G --> R["Ranking"]
-    R --> I["CLI"]
+    F --> P["Perfil profissional"]
+    P --> X["Compatibilidade vaga-curriculo"]
+    X --> V["Revisao manual"]
+    R --> V
+    V --> I["CLI"]
     F --> I
 ```
 
@@ -53,7 +60,11 @@ FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
    fecha publicacoes ausentes somente quando a autoridade da coleta permite.
 9. A relevancia usa uma entrada canonica compartilhada por dry-run, importacao,
    coleta persistida e reavaliacao de vagas existentes.
-10. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
+10. `radar review-queue`, `radar mark-applied`, `radar applications` e
+   `radar application-event` cuidam do fluxo manual de revisao e historico.
+11. `radar import-profile`, `radar compare-profile` e
+   `radar show-compatibility` cuidam do perfil profissional versionado.
+12. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
    `radar show-job`, `radar stats`, `radar boards` e `radar source-health`
    consultam ou atualizam o banco.
 
@@ -92,8 +103,8 @@ fecha publicacoes. Snapshots parciais por truncamento, itens invalidos ou HTTP
 - Busca global por empresas.
 - Crawling recursivo ou busca no Google.
 - LinkedIn, Indeed, Glassdoor, Solides e Pandape.
-- Gmail e classificacao de e-mails.
 - Geracao de curriculo.
+- Gmail.
 - Interpretacao semantica ampla ou IA.
 - Playwright.
 - Candidatura automatica ou envio de formulario.

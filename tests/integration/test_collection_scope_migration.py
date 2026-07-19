@@ -87,6 +87,60 @@ def test_relevance_consistency_migration_adds_structured_fields_and_downgrades(
     assert "technologies_json" not in job_columns
 
 
+def test_professional_profile_and_tracking_migration_adds_tables_and_downgrades(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    config = alembic_config(settings)
+
+    command.upgrade(config, "0006_relevance_consistency_and_observations")
+    command.upgrade(config, "head")
+    engine = create_engine(settings.database_url, future=True)
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        application_columns = {column["name"] for column in inspector.get_columns("applications")}
+        resume_version_columns = {
+            column["name"] for column in inspector.get_columns("resume_versions")
+        }
+    finally:
+        engine.dispose()
+    assert "job_review_states" in tables
+    assert "job_review_events" in tables
+    assert "application_matches" in tables
+    assert "professional_profiles" in tables
+    assert "professional_profile_versions" in tables
+    assert "profile_skills" in tables
+    assert "profile_evidences" in tables
+    assert "job_profile_comparisons" in tables
+    assert "job_requirement_matches" in tables
+    assert "application_key" in application_columns
+    assert "stage" in application_columns
+    assert "profile_version_id" in resume_version_columns
+
+    command.downgrade(config, "0006_relevance_consistency_and_observations")
+    engine = create_engine(settings.database_url, future=True)
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        application_columns = {column["name"] for column in inspector.get_columns("applications")}
+        resume_version_columns = {
+            column["name"] for column in inspector.get_columns("resume_versions")
+        }
+    finally:
+        engine.dispose()
+    assert "job_review_states" not in tables
+    assert "job_review_events" not in tables
+    assert "application_matches" not in tables
+    assert "professional_profiles" not in tables
+    assert "professional_profile_versions" not in tables
+    assert "job_profile_comparisons" not in tables
+    assert "job_requirement_matches" not in tables
+    assert "application_key" not in application_columns
+    assert "stage" not in application_columns
+    assert "profile_version_id" not in resume_version_columns
+
+
 def test_collection_scope_migration_backfills_existing_0003_rows(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     config = alembic_config(settings)

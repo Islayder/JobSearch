@@ -22,8 +22,21 @@ erDiagram
     POSTING ||--o{ POSTING_REVISION : changed_by
     POSTING ||--o{ DISCOVERY_HIT : seen_in
     JOB ||--o| DECISION : evaluated_by
+    JOB ||--o| JOB_REVIEW_STATE : reviewed_as
+    JOB ||--o{ JOB_REVIEW_EVENT : review_events
     JOB ||--o{ APPLICATION : applied_to
     APPLICATION ||--o{ APPLICATION_EVENT : has
+    APPLICATION ||--o{ APPLICATION_MATCH : matched_by
+    PROFESSIONAL_PROFILE ||--o{ PROFESSIONAL_PROFILE_VERSION : versions
+    PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_SKILL : skills
+    PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_EVIDENCE : evidences
+    PROFESSIONAL_PROFILE_VERSION ||--o{ PROFESSIONAL_EXPERIENCE : experiences
+    PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_PROJECT : projects
+    PROFESSIONAL_PROFILE_VERSION ||--o{ EDUCATION_CREDENTIAL : education
+    PROFESSIONAL_PROFILE_VERSION ||--o{ LANGUAGE_SKILL : languages
+    JOB ||--o{ JOB_PROFILE_COMPARISON : compared_by
+    PROFESSIONAL_PROFILE_VERSION ||--o{ JOB_PROFILE_COMPARISON : used_in
+    JOB_PROFILE_COMPARISON ||--o{ JOB_REQUIREMENT_MATCH : explains
     FILE_IMPORT_BATCH ||--o{ IMPORT_ITEM_AUDIT : audits
     POSTING ||--o{ IMPORT_ITEM_AUDIT : traced_by
 ```
@@ -113,14 +126,41 @@ campos minimos para futura compatibilidade academica.
 detalhamento e relevancia profissional (`relevance_status`, `relevance_score`,
 `relevance_reason_json`, `relevance_rules_version`).
 
-`Application` e `ApplicationEvent` registram candidatura e evolucao do processo,
-sem envio automatico nesta etapa.
+`JobReviewState` guarda o estado manual atual da vaga na fila de revisao:
+`UNREVIEWED`, `SEEN`, `SHORTLISTED`, `DISMISSED` ou `APPLIED`.
+`JobReviewEvent` registra historico append-only de acoes humanas.
 
-`Resume` e `ResumeVersion` guardam estrutura para futuras versoes de curriculo,
-sem geracao de arquivo.
+`Application` registra candidatura feita manualmente fora do sistema. Campos
+principais: `application_key`, `status`, `applied_at`, `platform`,
+`external_reference`, `application_url`, `stage` e `notes`. `stage` separa o
+andamento do processo seletivo do estado global da vaga e pode ser `APPLIED`,
+`AWAITING_UPDATE`, `ASSESSMENT_RECEIVED`, `ASSESSMENT_COMPLETED`,
+`CASE_RECEIVED`, `CASE_SUBMITTED`, `INTERVIEW_SCHEDULED`,
+`INTERVIEW_COMPLETED`, `OFFER_RECEIVED`, `REJECTED` ou `WITHDRAWN`.
+`ApplicationEvent` registra evolucao do processo com eventos como `SUBMITTED`,
+`INTERVIEW_INVITED`, `REJECTED`, `OFFER_RECEIVED` e `WITHDRAWN`.
 
-`EmailMessage` guarda estrutura para futura integracao de e-mails, sem conexao
-com Gmail nesta etapa.
+`ApplicationMatch` registra evidencias de vinculo entre historico externo e
+vaga local. O match pode ser `EXACT`, `PROBABLE`, `UNMATCHED` ou
+`CONFLICT`, com status local `LINKED`, `NEEDS_REVIEW` ou `IGNORED`.
+
+`ProfessionalProfile` representa o perfil profissional local. Cada
+`ProfessionalProfileVersion` guarda numero da versao, hash do arquivo local,
+hash da estrutura validada, caminho local de origem, resumo e JSON estruturado
+usado na avaliacao.
+
+`ProfileSkill`, `ProfileEvidence`, `ProfessionalExperience`, `ProfileProject`,
+`EducationCredential` e `LanguageSkill` armazenam habilidades com evidencias,
+experiencias, projetos, formacao e idiomas. Evidencias apontam para a versao do
+perfil e opcionalmente para uma habilidade especifica.
+
+`Resume` e `ResumeVersion` registram a importacao local versionada do curriculo
+estruturado, sem gerar arquivo novo e sem versionar o arquivo real no Git.
+
+`JobProfileComparison` guarda a comparacao entre uma vaga e uma versao de
+perfil. `JobRequirementMatch` guarda cada requisito como obrigatorio ou
+desejavel, com status `MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` ou
+`AMBIGUOUS`, evidencias e explicacao.
 
 `FileImportBatch` e `ImportItemAudit` registram auditoria de importacoes locais.
 
@@ -133,3 +173,6 @@ coleta, tipo, modalidade, cidade, empresa e nota.
 
 `CompanyBoard.key` e unico quando presente. Boards antigos sem key podem ser
 migrados e atualizados posteriormente.
+
+`Application.application_key` e unico quando presente e evita duplicar
+candidaturas importadas por identidade de plataforma, URL ou referencia externa.

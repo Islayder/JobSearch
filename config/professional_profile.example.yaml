@@ -1,0 +1,61 @@
+profile_name: Perfil Sintetico de Dados
+headline: Estudante de tecnologia focado em dados, BI e automacao.
+summary: Perfil ficticio para demonstrar importacao local e comparacao vaga-curriculo.
+
+skills:
+  - name: SQL
+    category: dados
+    level: intermediario
+    evidence:
+      - title: Dashboard academico de indicadores
+        description: Consultas SQL para preparar indicadores de acompanhamento.
+        evidence_type: PROJECT
+  - name: Python
+    category: dados
+    level: intermediario
+    evidence:
+      - title: Automacao de relatorio
+        description: Script Python para consolidar arquivos CSV sinteticos.
+        evidence_type: PROJECT
+  - name: Power BI
+    category: bi
+    level: basico
+    evidence:
+      - title: Painel de acompanhamento
+        description: Painel sintetico com medidas e filtros de analise.
+        evidence_type: PROJECT
+  - name: Git
+    category: tecnologia
+    level: basico
+
+experiences:
+  - title: Monitoria academica de dados
+    organization: Organizacao Ficticia
+    start_date: "2026-02"
+    end_date: "2026-06"
+    description: Apoio ficticio em limpeza de planilhas e indicadores.
+    skills:
+      - SQL
+      - Python
+
+projects:
+  - name: Radar academico de vagas
+    description: Projeto ficticio para coletar e classificar oportunidades sinteticas.
+    technologies:
+      - Python
+      - SQL
+      - Power BI
+    source_ref: portfolio-sintetico
+
+education:
+  - institution: Universidade Exemplo
+    course: Engenharia de Software
+    status: em andamento
+    start_date: "2024"
+    end_date: "2028"
+
+languages:
+  - name: Ingles
+    level: intermediario
+    evidence:
+      - leitura tecnica

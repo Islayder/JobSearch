@@ -44,6 +44,31 @@ def test_full_cli_flow_and_fixture_idempotency(tmp_path: Path) -> None:
     assert stats_result.exit_code == 0, stats_result.output
     assert "Resumo" in stats_result.output
 
+    review_queue_result = runner.invoke(app, ["review-queue", "--limit", "5"], env=env)
+    assert review_queue_result.exit_code == 0, review_queue_result.output
+    assert "Fila" in review_queue_result.output
+
+    applications_result = runner.invoke(app, ["applications"], env=env)
+    assert applications_result.exit_code == 0, applications_result.output
+    assert "candidatura" in applications_result.output.lower()
+
+    profile_path = PROJECT_ROOT / "config" / "professional_profile.example.yaml"
+    profile_result = runner.invoke(app, ["import-profile", str(profile_path)], env=env)
+    assert profile_result.exit_code == 0, profile_result.output
+    assert "Perfil" in profile_result.output
+
+    profiles_result = runner.invoke(app, ["profiles"], env=env)
+    assert profiles_result.exit_code == 0, profiles_result.output
+    assert "Perfis" in profiles_result.output
+
+    compare_result = runner.invoke(app, ["compare-profile", "1"], env=env)
+    assert compare_result.exit_code == 0, compare_result.output
+    assert "Compatibilidade" in compare_result.output
+
+    compatibility_result = runner.invoke(app, ["show-compatibility", "1"], env=env)
+    assert compatibility_result.exit_code == 0, compatibility_result.output
+    assert "Requisitos" in compatibility_result.output
+
     settings = Settings(database_url=env["RADAR_DATABASE_URL"], config_dir=PROJECT_ROOT / "config")
     with session_scope(settings) as session:
         assert session.scalar(select(func.count(Posting.id))) == 18
@@ -114,6 +139,7 @@ def _config_with_example_blocked(tmp_path: Path) -> Path:
         "eligibility_rules.yaml",
         "ranking_weights.yaml",
         "profile.example.yaml",
+        "professional_profile.example.yaml",
         "blocked_companies.example.yaml",
         "sources.example.yaml",
     ]:

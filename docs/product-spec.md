@@ -13,9 +13,11 @@ duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 - boards publicos Greenhouse;
 - boards publicos Lever.
 - consultas publicas Gupy em modo `public_portal`.
+- historico local de candidaturas em JSON/CSV;
+- perfil profissional/curriculo local em YAML, JSON ou TXT estruturado.
 
-Nao ha crawling recursivo, Gmail, IA, geracao de curriculo, preenchimento de
-formularios ou candidatura automatica.
+Nao ha crawling recursivo, IA, Gmail, geracao automatica de curriculo,
+preenchimento de formularios ou candidatura automatica.
 
 ## Usuario
 
@@ -78,5 +80,13 @@ elimina uma vaga e tambem nao gera pontos no ranking.
 ## Candidatura
 
 A preparacao de candidatura e humana nesta versao. A aplicacao registra a
-estrutura de candidatura e eventos, mas nao envia candidaturas, nao preenche
-formularios e nao altera curriculos.
+estrutura de candidatura, fila de revisao e eventos, mas nao envia
+candidaturas, nao preenche formularios e nao altera curriculos.
+
+## Perfil Profissional
+
+O perfil profissional e importado localmente e versionado. Ele pode conter
+habilidades com evidencias, experiencias, projetos, formacao e idiomas. A
+comparacao vaga-curriculo preserva a versao usada na analise e diferencia
+`MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` e `AMBIGUOUS`, separando
+requisitos obrigatorios de desejaveis.

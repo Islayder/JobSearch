@@ -18,12 +18,21 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from radar_vagas.domain.enums import (
+    ApplicationEventType,
+    ApplicationMatchKind,
+    ApplicationMatchStatus,
+    ApplicationStage,
     ApplicationStatus,
     EligibilityStatus,
     EmploymentType,
     JobStatus,
     PostingStatus,
+    ProfileEvidenceType,
     RelevanceStatus,
+    RequirementKind,
+    RequirementMatchStatus,
+    ReviewEventType,
+    ReviewState,
     SourceRunStatus,
     WorkModel,
 )
@@ -324,8 +333,16 @@ class Job(Base):
         back_populates="job", cascade="all, delete-orphan"
     )
     applications: Mapped[list["Application"]] = relationship(back_populates="job")
+    review_state: Mapped["JobReviewState | None"] = relationship(
+        back_populates="job", cascade="all, delete-orphan", uselist=False
+    )
+    review_events: Mapped[list["JobReviewEvent"]] = relationship(back_populates="job")
     resume_versions: Mapped[list["ResumeVersion"]] = relationship(back_populates="job")
     email_messages: Mapped[list["EmailMessage"]] = relationship(back_populates="job")
+    application_matches: Mapped[list["ApplicationMatch"]] = relationship(back_populates="job")
+    profile_comparisons: Mapped[list["JobProfileComparison"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
 
 
 class Decision(Base):
@@ -392,16 +409,24 @@ class DiscoveryHit(Base):
 
 class Application(Base):
     __tablename__ = "applications"
-    __table_args__ = (Index("ix_applications_status", "status"),)
+    __table_args__ = (
+        UniqueConstraint("application_key", name="uq_applications_application_key"),
+        Index("ix_applications_status", "status"),
+        Index("ix_applications_platform", "platform"),
+        Index("ix_applications_applied_at", "applied_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), nullable=False, index=True)
+    application_key: Mapped[str | None] = mapped_column(String(1200))
     status: Mapped[ApplicationStatus] = mapped_column(
         enum_type(ApplicationStatus), default=ApplicationStatus.PREPARING, nullable=False
     )
+    stage: Mapped[ApplicationStage | None] = mapped_column(enum_type(ApplicationStage))
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     platform: Mapped[str | None] = mapped_column(String(120))
     external_reference: Mapped[str | None] = mapped_column(String(255))
+    application_url: Mapped[str | None] = mapped_column(String(1000))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -413,6 +438,7 @@ class Application(Base):
         back_populates="application", cascade="all, delete-orphan"
     )
     email_messages: Mapped[list["EmailMessage"]] = relationship(back_populates="application")
+    matches: Mapped[list["ApplicationMatch"]] = relationship(back_populates="application")
 
 
 class ApplicationEvent(Base):
@@ -422,12 +448,61 @@ class ApplicationEvent(Base):
     application_id: Mapped[int] = mapped_column(
         ForeignKey("applications.id"), nullable=False, index=True
     )
-    event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    event_type: Mapped[ApplicationEventType] = mapped_column(
+        enum_type(ApplicationEventType), nullable=False
+    )
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     source: Mapped[str] = mapped_column(String(120), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     application: Mapped[Application] = relationship(back_populates="events")
+
+
+class JobReviewState(Base):
+    __tablename__ = "job_review_states"
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_job_review_states_job_id"),
+        Index("ix_job_review_states_state", "state"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), nullable=False, index=True)
+    state: Mapped[ReviewState] = mapped_column(
+        enum_type(ReviewState), default=ReviewState.UNREVIEWED, nullable=False
+    )
+    reason_code: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    job: Mapped[Job] = relationship(back_populates="review_state")
+
+
+class JobReviewEvent(Base):
+    __tablename__ = "job_review_events"
+    __table_args__ = (
+        Index("ix_job_review_events_job_id", "job_id"),
+        Index("ix_job_review_events_event_type", "event_type"),
+        Index("ix_job_review_events_occurred_at", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), nullable=False, index=True)
+    event_type: Mapped[ReviewEventType] = mapped_column(enum_type(ReviewEventType), nullable=False)
+    previous_job_status: Mapped[JobStatus | None] = mapped_column(enum_type(JobStatus))
+    new_job_status: Mapped[JobStatus | None] = mapped_column(enum_type(JobStatus))
+    previous_review_state: Mapped[ReviewState | None] = mapped_column(enum_type(ReviewState))
+    new_review_state: Mapped[ReviewState | None] = mapped_column(enum_type(ReviewState))
+    reason_code: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    job: Mapped[Job] = relationship(back_populates="review_events")
 
 
 class Resume(Base):
@@ -451,12 +526,272 @@ class ResumeVersion(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     resume_id: Mapped[int] = mapped_column(ForeignKey("resumes.id"), nullable=False, index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)
+    profile_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), index=True
+    )
     file_path: Mapped[str | None] = mapped_column(String(1000))
     change_summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     resume: Mapped[Resume] = relationship(back_populates="versions")
     job: Mapped[Job | None] = relationship(back_populates="resume_versions")
+    profile_version: Mapped["ProfessionalProfileVersion | None"] = relationship(
+        back_populates="resume_versions"
+    )
+
+
+class ProfessionalProfile(Base):
+    __tablename__ = "professional_profiles"
+    __table_args__ = (
+        UniqueConstraint("normalized_name", name="uq_professional_profiles_normalized_name"),
+        Index("ix_professional_profiles_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    versions: Mapped[list["ProfessionalProfileVersion"]] = relationship(
+        back_populates="profile", cascade="all, delete-orphan"
+    )
+
+
+class ProfessionalProfileVersion(Base):
+    __tablename__ = "professional_profile_versions"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "version_number", name="uq_profile_versions_number"),
+        UniqueConstraint("profile_id", "content_hash", name="uq_profile_versions_content_hash"),
+        Index("ix_profile_versions_active", "is_active"),
+        Index("ix_profile_versions_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profiles.id"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_path: Mapped[str | None] = mapped_column(String(1000))
+    source_format: Mapped[str | None] = mapped_column(String(40))
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    headline: Mapped[str | None] = mapped_column(String(500))
+    summary: Mapped[str | None] = mapped_column(Text)
+    raw_profile_json: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    profile: Mapped[ProfessionalProfile] = relationship(back_populates="versions")
+    skills: Mapped[list["ProfileSkill"]] = relationship(
+        back_populates="profile_version", cascade="all, delete-orphan"
+    )
+    evidences: Mapped[list["ProfileEvidence"]] = relationship(
+        back_populates="profile_version", cascade="all, delete-orphan"
+    )
+    experiences: Mapped[list["ProfessionalExperience"]] = relationship(
+        back_populates="profile_version", cascade="all, delete-orphan"
+    )
+    projects: Mapped[list["ProfileProject"]] = relationship(
+        back_populates="profile_version", cascade="all, delete-orphan"
+    )
+    education: Mapped[list["EducationCredential"]] = relationship(
+        back_populates="profile_version", cascade="all, delete-orphan"
+    )
+    languages: Mapped[list["LanguageSkill"]] = relationship(
+        back_populates="profile_version", cascade="all, delete-orphan"
+    )
+    resume_versions: Mapped[list[ResumeVersion]] = relationship(back_populates="profile_version")
+    comparisons: Mapped[list["JobProfileComparison"]] = relationship(
+        back_populates="profile_version", cascade="all, delete-orphan"
+    )
+
+
+class ProfileSkill(Base):
+    __tablename__ = "profile_skills"
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_version_id",
+            "normalized_name",
+            name="uq_profile_skills_version_name",
+        ),
+        Index("ix_profile_skills_normalized_name", "normalized_name"),
+        Index("ix_profile_skills_category", "category"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(120))
+    level: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    profile_version: Mapped[ProfessionalProfileVersion] = relationship(back_populates="skills")
+    evidences: Mapped[list["ProfileEvidence"]] = relationship(back_populates="skill")
+
+
+class ProfileEvidence(Base):
+    __tablename__ = "profile_evidences"
+    __table_args__ = (
+        Index("ix_profile_evidences_profile_version_id", "profile_version_id"),
+        Index("ix_profile_evidences_skill_id", "skill_id"),
+        Index("ix_profile_evidences_type", "evidence_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), nullable=False
+    )
+    skill_id: Mapped[int | None] = mapped_column(ForeignKey("profile_skills.id"))
+    evidence_type: Mapped[ProfileEvidenceType] = mapped_column(
+        enum_type(ProfileEvidenceType), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    source_ref: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    profile_version: Mapped[ProfessionalProfileVersion] = relationship(back_populates="evidences")
+    skill: Mapped[ProfileSkill | None] = relationship(back_populates="evidences")
+
+
+class ProfessionalExperience(Base):
+    __tablename__ = "professional_experiences"
+    __table_args__ = (
+        Index("ix_professional_experiences_profile_version_id", "profile_version_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    organization: Mapped[str | None] = mapped_column(String(255))
+    start_date: Mapped[str | None] = mapped_column(String(40))
+    end_date: Mapped[str | None] = mapped_column(String(40))
+    description: Mapped[str | None] = mapped_column(Text)
+    skills_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+
+    profile_version: Mapped[ProfessionalProfileVersion] = relationship(back_populates="experiences")
+
+
+class ProfileProject(Base):
+    __tablename__ = "profile_projects"
+    __table_args__ = (Index("ix_profile_projects_profile_version_id", "profile_version_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    technologies_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(500))
+
+    profile_version: Mapped[ProfessionalProfileVersion] = relationship(back_populates="projects")
+
+
+class EducationCredential(Base):
+    __tablename__ = "education_credentials"
+    __table_args__ = (Index("ix_education_credentials_profile_version_id", "profile_version_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), nullable=False, index=True
+    )
+    institution: Mapped[str] = mapped_column(String(255), nullable=False)
+    course: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str | None] = mapped_column(String(120))
+    start_date: Mapped[str | None] = mapped_column(String(40))
+    end_date: Mapped[str | None] = mapped_column(String(40))
+
+    profile_version: Mapped[ProfessionalProfileVersion] = relationship(back_populates="education")
+
+
+class LanguageSkill(Base):
+    __tablename__ = "language_skills"
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_version_id",
+            "normalized_name",
+            name="uq_language_skills_version_name",
+        ),
+        Index("ix_language_skills_profile_version_id", "profile_version_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    level: Mapped[str] = mapped_column(String(120), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+
+    profile_version: Mapped[ProfessionalProfileVersion] = relationship(back_populates="languages")
+
+
+class JobProfileComparison(Base):
+    __tablename__ = "job_profile_comparisons"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id",
+            "profile_version_id",
+            name="uq_job_profile_comparisons_job_profile_version",
+        ),
+        Index("ix_job_profile_comparisons_score", "overall_score"),
+        Index("ix_job_profile_comparisons_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), nullable=False, index=True)
+    profile_version_id: Mapped[int] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), nullable=False, index=True
+    )
+    overall_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    score_breakdown_json: Mapped[str] = mapped_column(Text, nullable=False)
+    attention_points_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    rules_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    job: Mapped[Job] = relationship(back_populates="profile_comparisons")
+    profile_version: Mapped[ProfessionalProfileVersion] = relationship(back_populates="comparisons")
+    requirement_matches: Mapped[list["JobRequirementMatch"]] = relationship(
+        back_populates="comparison", cascade="all, delete-orphan"
+    )
+
+
+class JobRequirementMatch(Base):
+    __tablename__ = "job_requirement_matches"
+    __table_args__ = (
+        Index("ix_job_requirement_matches_comparison_id", "comparison_id"),
+        Index("ix_job_requirement_matches_status", "match_status"),
+        Index("ix_job_requirement_matches_kind", "requirement_kind"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    comparison_id: Mapped[int] = mapped_column(
+        ForeignKey("job_profile_comparisons.id"), nullable=False
+    )
+    requirement_text: Mapped[str] = mapped_column(Text, nullable=False)
+    requirement_kind: Mapped[RequirementKind] = mapped_column(
+        enum_type(RequirementKind), nullable=False
+    )
+    match_status: Mapped[RequirementMatchStatus] = mapped_column(
+        enum_type(RequirementMatchStatus), nullable=False
+    )
+    evidence_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    comparison: Mapped[JobProfileComparison] = relationship(back_populates="requirement_matches")
 
 
 class EmailMessage(Base):
@@ -481,6 +816,32 @@ class EmailMessage(Base):
     company: Mapped[Company | None] = relationship(back_populates="email_messages")
     job: Mapped[Job | None] = relationship(back_populates="email_messages")
     application: Mapped[Application | None] = relationship(back_populates="email_messages")
+
+
+class ApplicationMatch(Base):
+    __tablename__ = "application_matches"
+    __table_args__ = (
+        Index("ix_application_matches_application_id", "application_id"),
+        Index("ix_application_matches_job_id", "job_id"),
+        Index("ix_application_matches_kind_status", "match_kind", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int | None] = mapped_column(ForeignKey("applications.id"))
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"))
+    match_kind: Mapped[ApplicationMatchKind] = mapped_column(
+        enum_type(ApplicationMatchKind), nullable=False
+    )
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[ApplicationMatchStatus] = mapped_column(
+        enum_type(ApplicationMatchStatus), nullable=False
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    application: Mapped[Application | None] = relationship(back_populates="matches")
+    job: Mapped[Job | None] = relationship(back_populates="application_matches")
 
 
 class FileImportBatch(Base):

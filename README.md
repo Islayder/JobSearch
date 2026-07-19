@@ -2,11 +2,12 @@
 
 Radar de Vagas e uma aplicacao local em Python para encontrar, organizar,
 deduplicar, avaliar e acompanhar oportunidades profissionais compativeis com um
-unico usuario. A versao atual trabalha com fixtures, arquivos locais JSON/CSV e
-coletores publicos de vagas.
+unico usuario. A versao atual trabalha com fixtures, arquivos locais JSON/CSV,
+coletores publicos de vagas, revisao manual e acompanhamento local de
+candidaturas.
 
-Nao ha integracao com Gmail, IA, geracao de curriculo, preenchimento de
-formularios ou candidatura automatica nesta etapa.
+Nao ha IA, Gmail, geracao automatica de curriculo, preenchimento de formularios
+ou candidatura automatica nesta etapa.
 
 ## Requisitos
 
@@ -99,6 +100,39 @@ radar show-config
 radar doctor
 ```
 
+Importe um perfil profissional local e compare uma vaga com o curriculo
+estruturado:
+
+```powershell
+radar import-profile config/professional_profile.example.yaml
+radar profiles
+radar show-profile 1
+radar compare-profile 1
+radar show-compatibility 1
+```
+
+Revise vagas e acompanhe candidaturas feitas manualmente fora do sistema:
+
+```powershell
+radar review-queue --limit 50
+radar mark-seen 123
+radar shortlist 123
+radar dismiss-job 123 --reason manual
+radar restore-job 123
+radar mark-applied 123 --platform gupy --external-reference APP-123
+radar applications
+radar show-application 1
+radar application-event 1 --type INTERVIEW_INVITED --notes "convite recebido"
+```
+
+Importe historico local de candidaturas:
+
+```powershell
+radar validate-application-history data/imports/applications.csv
+radar import-application-history data/imports/applications.csv --dry-run
+radar import-application-history data/imports/applications.csv --no-dry-run
+```
+
 ## Marco 4.1
 
 O pipeline de descoberta Gupy usa a mesma entrada canonica de relevancia no
@@ -130,6 +164,7 @@ Arquivos de exemplo e regras ficam em `config/`:
 
 - `profile.example.yaml`
 - `profile.yaml`
+- `professional_profile.example.yaml`
 - `eligibility_rules.yaml`
 - `ranking_weights.yaml`
 - `blocked_companies.yaml`
@@ -157,6 +192,9 @@ $env:RADAR_DATABASE_URL = "sqlite:///C:/caminho/para/radar.sqlite3"
 pelo Git.
 `config/search_queries.local.yaml` pode conter ajustes locais de consultas e
 tambem e ignorado pelo Git.
+`config/profile.local.yaml`, `config/professional_profile.local.yaml`,
+curriculos reais, credenciais, tokens, bancos e relatorios locais tambem sao
+ignorados.
 
 ## Documentacao
 
@@ -170,6 +208,11 @@ tambem e ignorado pelo Git.
 - `docs/search-queries.md`
 - `docs/relevance.md`
 - `docs/gupy-collector.md`
+- `docs/review-workflow.md`
+- `docs/professional-profile.md`
+- `docs/application-tracking.md`
+- `docs/application-history-import.md`
+- `docs/privacy-policy.md`
 - `docs/collector-development-playbook.md`
 
 ## Escopo Atual
@@ -177,10 +220,12 @@ tambem e ignorado pelo Git.
 A versao atual entrega ingestao por JSON/CSV local, coleta publica por JSON-LD
 JobPosting, Greenhouse, Lever e Gupy Public Portal, deduplicacao deterministica,
 avaliacao de elegibilidade, relevancia profissional, ranking explicavel,
-auditoria de importacao/coleta e CLI.
+auditoria de importacao/coleta, fila de revisao, acompanhamento manual de
+candidaturas, importacao de historico local, perfil profissional versionado e
+comparacao explicavel entre vaga e curriculo.
 Boards persistidos sao isolados por escopo estavel de coletor e key/token/URL;
 o nome da empresa e apenas informacao auxiliar de exibicao.
 
-Pandape, Solides, LinkedIn, Indeed, crawling recursivo, Gmail, IA, geracao de
-curriculo, Playwright, formularios e candidatura automatica ficam fora desta
-etapa.
+Pandape, Solides, LinkedIn, Indeed, crawling recursivo, IA, geracao de
+curriculo por IA, Gmail, Playwright, formularios e candidatura automatica ficam
+fora desta etapa.
