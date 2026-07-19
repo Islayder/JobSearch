@@ -46,6 +46,15 @@ from radar_vagas.applications.review import (
 from radar_vagas.applications.review import (
     review_queue as review_queue_service,
 )
+from radar_vagas.applications.state import rebuild_application_state
+from radar_vagas.calendar.service import (
+    cancel_event,
+    complete_event,
+    confirm_event,
+    create_event,
+    get_event,
+    list_upcoming_events,
+)
 from radar_vagas.canonicalization.normalize import normalize_company_name
 from radar_vagas.collection.orchestrator import (
     build_collection_context,
@@ -73,6 +82,9 @@ from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
     ApplicationEventType,
     ApplicationStatus,
+    CareerEventConfirmationStatus,
+    CareerEventSource,
+    CareerEventType,
     CollectionAuthority,
     EligibilityStatus,
     EmploymentType,
@@ -102,6 +114,7 @@ from radar_vagas.persistence.database import session_scope
 from radar_vagas.persistence.migrations import database_display_path, run_migrations
 from radar_vagas.persistence.models import (
     Application,
+    CareerEvent,
     Company,
     CompanyBoard,
     Decision,
@@ -121,6 +134,7 @@ from radar_vagas.profile.service import (
     ProfileImportResult,
     RequirementCandidate,
     RequirementEvaluation,
+    activate_profile_version,
     compare_job_to_profile,
     import_professional_profile,
     latest_comparison_for_job,
@@ -1075,6 +1089,22 @@ def show_profile_command(
     _run(ctx, action)
 
 
+@app.command("activate-profile")
+def activate_profile_command(
+    ctx: typer.Context,
+    profile_version_id: Annotated[int, typer.Argument(help="ID da versao do perfil.")],
+) -> None:
+    """Ativa uma versao de perfil e desativa todas as demais."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            version = activate_profile_version(session, profile_version_id)
+            console.print(f"Versao ativa do perfil: {version.id}.")
+
+    _run(ctx, action)
+
+
 @app.command("compare-profile")
 def compare_profile_command(
     ctx: typer.Context,
@@ -1352,6 +1382,29 @@ def application_event_command(
     _run(ctx, action)
 
 
+@app.command("rebuild-application-stage")
+def rebuild_application_stage_command(
+    ctx: typer.Context,
+    application_id: Annotated[int, typer.Argument(help="ID da candidatura.")],
+) -> None:
+    """Recalcula status e etapa da candidatura pela timeline persistida."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            application = session.get(Application, application_id)
+            if application is None:
+                raise RadarError(f"Candidatura nao encontrada: {application_id}")
+            result = rebuild_application_state(application)
+            console.print(
+                "Candidatura recalculada: "
+                f"status={result.status.value.lower()}, "
+                f"etapa={result.stage.value.lower() if result.stage else '-'}."
+            )
+
+    _run(ctx, action)
+
+
 @app.command("validate-application-history")
 def validate_application_history_command(
     ctx: typer.Context,
@@ -1409,6 +1462,155 @@ def import_application_history_command(
         if report is not None:
             write_application_history_report(result, report)
         _print_application_history_result(result)
+
+    _run(ctx, action)
+
+
+@app.command("agenda")
+def agenda_command(
+    ctx: typer.Context,
+    days: Annotated[int, typer.Option("--days", help="Janela futura em dias.")] = 30,
+    event_type: Annotated[str | None, typer.Option("--type", help="Tipo do evento.")] = None,
+) -> None:
+    """Lista proximos eventos locais da agenda."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            events = list_upcoming_events(
+                session,
+                days=days,
+                event_type=parse_enum_value(CareerEventType, event_type) if event_type else None,
+            )
+            _print_agenda_events(events)
+
+    _run(ctx, action)
+
+
+@app.command("add-agenda-event")
+def add_agenda_event_command(
+    ctx: typer.Context,
+    event_type: Annotated[str, typer.Option("--type", help="Tipo do evento.")],
+    title: Annotated[str, typer.Option("--title", help="Titulo do evento.")],
+    job_id: Annotated[int | None, typer.Option("--job-id", help="ID da vaga.")] = None,
+    application_id: Annotated[
+        int | None, typer.Option("--application-id", help="ID da candidatura.")
+    ] = None,
+    event_key: Annotated[
+        str | None, typer.Option("--event-key", help="Identidade idempotente opcional.")
+    ] = None,
+    starts_at: Annotated[
+        str | None, typer.Option("--starts-at", help="Inicio ISO com timezone.")
+    ] = None,
+    ends_at: Annotated[str | None, typer.Option("--ends-at", help="Fim ISO com timezone.")] = None,
+    all_day: Annotated[bool, typer.Option("--all-day", help="Evento de dia inteiro.")] = False,
+    timezone: Annotated[str, typer.Option("--timezone", help="Timezone original.")] = "UTC",
+    source: Annotated[str, typer.Option("--source", help="Origem do evento.")] = "manual",
+    confidence: Annotated[
+        float | None, typer.Option("--confidence", help="Confianca entre 0 e 1.")
+    ] = None,
+    confirmation_status: Annotated[
+        str | None,
+        typer.Option("--confirmation-status", help="Estado de confirmacao."),
+    ] = None,
+    location: Annotated[str | None, typer.Option("--location", help="Local.")] = None,
+    meeting_url: Annotated[
+        str | None, typer.Option("--meeting-url", help="URL http/https segura.")
+    ] = None,
+    notes: Annotated[str | None, typer.Option("--notes", help="Notas locais.")] = None,
+) -> None:
+    """Cria evento local de agenda sem integrar calendario externo."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            event = create_event(
+                session,
+                event_type=parse_enum_value(CareerEventType, event_type),
+                title=title,
+                job_id=job_id,
+                application_id=application_id,
+                event_key=event_key,
+                starts_at=_parse_datetime_option(starts_at, "--starts-at"),
+                ends_at=_parse_datetime_option(ends_at, "--ends-at"),
+                all_day=all_day,
+                timezone=timezone,
+                source=parse_enum_value(CareerEventSource, source),
+                confidence=confidence,
+                confirmation_status=(
+                    parse_enum_value(CareerEventConfirmationStatus, confirmation_status)
+                    if confirmation_status
+                    else None
+                ),
+                location=location,
+                meeting_url=meeting_url,
+                notes=notes,
+            )
+            session.flush()
+            console.print(f"Evento de agenda registrado: {event.id}.")
+
+    _run(ctx, action)
+
+
+@app.command("show-agenda-event")
+def show_agenda_event_command(
+    ctx: typer.Context,
+    event_id: Annotated[int, typer.Argument(help="ID do evento.")],
+) -> None:
+    """Mostra um evento local de agenda."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            _print_agenda_event_detail(get_event(session, event_id))
+
+    _run(ctx, action)
+
+
+@app.command("confirm-agenda-event")
+def confirm_agenda_event_command(
+    ctx: typer.Context,
+    event_id: Annotated[int, typer.Argument(help="ID do evento.")],
+) -> None:
+    """Confirma evento sugerido da agenda local."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            event = confirm_event(session, event_id)
+            console.print(f"Evento confirmado: {event.id}.")
+
+    _run(ctx, action)
+
+
+@app.command("complete-agenda-event")
+def complete_agenda_event_command(
+    ctx: typer.Context,
+    event_id: Annotated[int, typer.Argument(help="ID do evento.")],
+) -> None:
+    """Marca evento de agenda como concluido."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            event = complete_event(session, event_id)
+            console.print(f"Evento concluido: {event.id}.")
+
+    _run(ctx, action)
+
+
+@app.command("cancel-agenda-event")
+def cancel_agenda_event_command(
+    ctx: typer.Context,
+    event_id: Annotated[int, typer.Argument(help="ID do evento.")],
+) -> None:
+    """Cancela evento de agenda sem excluir historico."""
+
+    def action() -> None:
+        settings = _settings(ctx)
+        with session_scope(settings) as session:
+            event = cancel_event(session, event_id)
+            console.print(f"Evento cancelado: {event.id}.")
 
     _run(ctx, action)
 
@@ -2527,7 +2729,81 @@ def _print_application_history_result(result: ApplicationHistoryImportResult) ->
     table.add_row("Conflitos", str(result.conflicts))
     table.add_row("Candidaturas criadas", str(result.created_applications))
     table.add_row("Candidaturas atualizadas", str(result.updated_applications))
+    table.add_row("Itens inalterados", str(result.unchanged))
+    table.add_row("Precisam revisao", str(result.needs_review))
+    table.add_row("Matches criados", str(result.created_matches))
     console.print(table)
+
+
+def _print_agenda_events(events: list[CareerEvent]) -> None:
+    table = Table(title="Agenda local")
+    table.add_column("ID", justify="right")
+    table.add_column("Tipo")
+    table.add_column("Titulo")
+    table.add_column("Inicio")
+    table.add_column("Fim")
+    table.add_column("Status")
+    table.add_column("Origem")
+    table.add_column("Vaga", justify="right")
+    table.add_column("Candidatura", justify="right")
+    for event in events:
+        table.add_row(
+            str(event.id),
+            event.event_type.value.lower(),
+            event.title,
+            _date_or_dash(event.starts_at),
+            _date_or_dash(event.ends_at),
+            event.confirmation_status.value.lower(),
+            event.source.value.lower(),
+            "-" if event.job_id is None else str(event.job_id),
+            "-" if event.application_id is None else str(event.application_id),
+        )
+    if events:
+        console.print(table)
+    else:
+        console.print("Nenhum evento encontrado na agenda local.")
+
+
+def _print_agenda_event_detail(event: CareerEvent) -> None:
+    details = Table(title="Evento de agenda")
+    details.add_column("Campo")
+    details.add_column("Valor")
+    details.add_row("ID", str(event.id))
+    details.add_row("Tipo", event.event_type.value.lower())
+    details.add_row("Titulo", event.title)
+    details.add_row("Inicio", _date_or_dash(event.starts_at))
+    details.add_row("Fim", _date_or_dash(event.ends_at))
+    details.add_row("Dia inteiro", "sim" if event.all_day else "nao")
+    details.add_row("Timezone original", event.timezone)
+    details.add_row("Origem", event.source.value.lower())
+    details.add_row("Confianca", "-" if event.confidence is None else str(event.confidence))
+    details.add_row("Confirmacao", event.confirmation_status.value.lower())
+    details.add_row("Vaga", "-" if event.job_id is None else str(event.job_id))
+    details.add_row(
+        "Candidatura",
+        "-" if event.application_id is None else str(event.application_id),
+    )
+    details.add_row("Local", event.location or "-")
+    details.add_row("URL reuniao", event.meeting_url or "-")
+    details.add_row("Notas", event.notes or "-")
+    details.add_row("Concluido em", _date_or_dash(event.completed_at))
+    details.add_row("Cancelado em", _date_or_dash(event.cancelled_at))
+    console.print(details)
+
+    audits = Table(title="Auditoria")
+    audits.add_column("ID", justify="right")
+    audits.add_column("Acao")
+    audits.add_column("Quando")
+    audits.add_column("Fonte")
+    for audit in event.audits:
+        audits.add_row(
+            str(audit.id),
+            audit.action,
+            _date_or_dash(audit.occurred_at),
+            audit.source,
+        )
+    if event.audits:
+        console.print(audits)
 
 
 def _print_job_detail(job: Job) -> None:
@@ -3210,7 +3486,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0008_professional_profile_and_tracking":
+    if version == "0009_tracking_integrity_and_calendar":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 

@@ -27,13 +27,20 @@ erDiagram
     JOB ||--o{ APPLICATION : applied_to
     APPLICATION ||--o{ APPLICATION_EVENT : has
     APPLICATION ||--o{ APPLICATION_MATCH : matched_by
+    JOB ||--o{ CAREER_EVENT : scheduled_for
+    APPLICATION ||--o{ CAREER_EVENT : scheduled_for
+    CAREER_EVENT ||--o{ CAREER_EVENT_AUDIT : audited_by
     PROFESSIONAL_PROFILE ||--o{ PROFESSIONAL_PROFILE_VERSION : versions
+    PROFESSIONAL_PROFILE ||--o{ RESUME : has
+    RESUME ||--o{ RESUME_VERSION : versions
     PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_SKILL : skills
     PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_EVIDENCE : evidences
     PROFESSIONAL_PROFILE_VERSION ||--o{ PROFESSIONAL_EXPERIENCE : experiences
     PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_PROJECT : projects
     PROFESSIONAL_PROFILE_VERSION ||--o{ EDUCATION_CREDENTIAL : education
     PROFESSIONAL_PROFILE_VERSION ||--o{ LANGUAGE_SKILL : languages
+    PROFESSIONAL_PROFILE ||--o{ PROFILE_ACTIVATION_EVENT : activation_audit
+    PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_ACTIVATION_EVENT : activation_audit
     JOB ||--o{ JOB_PROFILE_COMPARISON : compared_by
     PROFESSIONAL_PROFILE_VERSION ||--o{ JOB_PROFILE_COMPARISON : used_in
     JOB_PROFILE_COMPARISON ||--o{ JOB_REQUIREMENT_MATCH : explains
@@ -128,7 +135,9 @@ detalhamento e relevancia profissional (`relevance_status`, `relevance_score`,
 
 `JobReviewState` guarda o estado manual atual da vaga na fila de revisao:
 `UNREVIEWED`, `SEEN`, `SHORTLISTED`, `DISMISSED` ou `APPLIED`.
-`JobReviewEvent` registra historico append-only de acoes humanas.
+`JobReviewEvent` registra historico append-only de acoes humanas. Mudancas de
+estado passam pela politica central de revisao para impedir combinacoes
+contraditorias entre `Job.status`, `JobReviewState` e candidaturas existentes.
 
 `Application` registra candidatura feita manualmente fora do sistema. Campos
 principais: `application_key`, `status`, `applied_at`, `platform`,
@@ -138,16 +147,21 @@ andamento do processo seletivo do estado global da vaga e pode ser `APPLIED`,
 `CASE_RECEIVED`, `CASE_SUBMITTED`, `INTERVIEW_SCHEDULED`,
 `INTERVIEW_COMPLETED`, `OFFER_RECEIVED`, `REJECTED` ou `WITHDRAWN`.
 `ApplicationEvent` registra evolucao do processo com eventos como `SUBMITTED`,
-`INTERVIEW_INVITED`, `REJECTED`, `OFFER_RECEIVED` e `WITHDRAWN`.
+`INTERVIEW_INVITED`, `REJECTED`, `OFFER_RECEIVED` e `WITHDRAWN`. `event_key`
+e opcional e torna eventos importados ou reprocessados idempotentes por
+candidatura. O estado resumido da candidatura e reconstruido por um redutor de
+timeline a partir dos eventos gravados.
 
 `ApplicationMatch` registra evidencias de vinculo entre historico externo e
 vaga local. O match pode ser `EXACT`, `PROBABLE`, `UNMATCHED` ou
 `CONFLICT`, com status local `LINKED`, `NEEDS_REVIEW` ou `IGNORED`.
+`fingerprint` evita duplicar a mesma evidencia em importacoes repetidas.
 
 `ProfessionalProfile` representa o perfil profissional local. Cada
 `ProfessionalProfileVersion` guarda numero da versao, hash do arquivo local,
 hash da estrutura validada, caminho local de origem, resumo e JSON estruturado
-usado na avaliacao.
+usado na avaliacao. Apenas uma versao pode ficar ativa globalmente. Mudancas de
+ativacao sao registradas em `ProfileActivationEvent`.
 
 `ProfileSkill`, `ProfileEvidence`, `ProfessionalExperience`, `ProfileProject`,
 `EducationCredential` e `LanguageSkill` armazenam habilidades com evidencias,
@@ -155,12 +169,21 @@ experiencias, projetos, formacao e idiomas. Evidencias apontam para a versao do
 perfil e opcionalmente para uma habilidade especifica.
 
 `Resume` e `ResumeVersion` registram a importacao local versionada do curriculo
-estruturado, sem gerar arquivo novo e sem versionar o arquivo real no Git.
+estruturado, sem gerar arquivo novo e sem versionar o arquivo real no Git. A
+entidade base `Resume` e reutilizada por perfil; novas importacoes criam novas
+`ResumeVersion` quando o conteudo muda.
 
 `JobProfileComparison` guarda a comparacao entre uma vaga e uma versao de
 perfil. `JobRequirementMatch` guarda cada requisito como obrigatorio ou
 desejavel, com status `MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` ou
-`AMBIGUOUS`, evidencias e explicacao.
+`AMBIGUOUS`, evidencias e explicacao. A identidade da comparacao usa vaga,
+versao do perfil, versao das regras e hash do conteudo da vaga, preservando
+historico quando a vaga ou as regras mudam.
+
+`CareerEvent` guarda agenda local de prazos, entrevistas, testes, cases,
+documentos, ofertas e follow-ups. Ele pode apontar para uma vaga, uma
+candidatura, ambas ou nenhuma delas. `CareerEventAudit` registra criacao,
+atualizacao e mudancas de estado da agenda.
 
 `FileImportBatch` e `ImportItemAudit` registram auditoria de importacoes locais.
 
@@ -176,3 +199,16 @@ migrados e atualizados posteriormente.
 
 `Application.application_key` e unico quando presente e evita duplicar
 candidaturas importadas por identidade de plataforma, URL ou referencia externa.
+`ApplicationEvent.application_id + event_key` e unico quando `event_key` esta
+presente. `ApplicationMatch.fingerprint` e unico quando presente.
+
+`ProfessionalProfileVersion` possui indice unico parcial para garantir uma
+unica versao ativa global. `ProfileActivationEvent` mantem auditoria da troca
+sem depender do historico editavel do perfil.
+
+`JobProfileComparison` e unico por `job_id`, `profile_version_id`,
+`rules_version` e `job_content_hash`. Reexecutar a mesma comparacao retorna o
+registro existente; alterar vaga, perfil ou regras cria um novo historico.
+
+`CareerEvent.event_key` e unico quando presente. Consultas de agenda usam
+indices por data, tipo, status de confirmacao, vaga e candidatura.

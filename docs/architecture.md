@@ -17,7 +17,9 @@ SQLite como banco e separa camadas por responsabilidade:
 - Ranking: pontuacao deterministica e explicavel.
 - Perfil profissional: importacao local versionada e evidencias.
 - Compatibilidade: comparacao explicavel entre vaga e curriculo.
-- Revisao e candidaturas: fila manual, guardas e historico local.
+- Revisao e candidaturas: politica central de estados, fila manual, guardas,
+  historico local e redutor de timeline.
+- Agenda local: prazos, entrevistas, testes e follow-ups sem calendario externo.
 - Persistencia: SQLAlchemy, sessoes, modelos e migracoes Alembic.
 
 ```mermaid
@@ -34,7 +36,9 @@ flowchart LR
     P --> X["Compatibilidade vaga-curriculo"]
     X --> V["Revisao manual"]
     R --> V
+    V --> A["Agenda local"]
     V --> I["CLI"]
+    A --> I
     F --> I
 ```
 
@@ -61,10 +65,14 @@ FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
 9. A relevancia usa uma entrada canonica compartilhada por dry-run, importacao,
    coleta persistida e reavaliacao de vagas existentes.
 10. `radar review-queue`, `radar mark-applied`, `radar applications` e
-   `radar application-event` cuidam do fluxo manual de revisao e historico.
+   `radar application-event` cuidam do fluxo manual de revisao e historico,
+   usando uma politica central para impedir transicoes contraditorias.
 11. `radar import-profile`, `radar compare-profile` e
-   `radar show-compatibility` cuidam do perfil profissional versionado.
-12. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
+   `radar show-compatibility` cuidam do perfil profissional versionado e de
+   comparacoes historicas auditaveis por hash da vaga.
+12. `radar agenda` e comandos `*-agenda-event` cuidam da agenda local, sem
+   Google Calendar, notificacoes ou leitura de e-mail.
+13. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
    `radar show-job`, `radar stats`, `radar boards` e `radar source-health`
    consultam ou atualizam o banco.
 
@@ -105,6 +113,7 @@ fecha publicacoes. Snapshots parciais por truncamento, itens invalidos ou HTTP
 - LinkedIn, Indeed, Glassdoor, Solides e Pandape.
 - Geracao de curriculo.
 - Gmail.
+- Google Calendar.
 - Interpretacao semantica ampla ou IA.
 - Playwright.
 - Candidatura automatica ou envio de formulario.

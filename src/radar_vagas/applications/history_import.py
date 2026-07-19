@@ -4,6 +4,7 @@ import csv
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,12 @@ from radar_vagas.domain.enums import (
 )
 from radar_vagas.domain.errors import RadarError
 from radar_vagas.domain.time import utc_now
-from radar_vagas.persistence.models import Application, ApplicationMatch, Job
+from radar_vagas.persistence.models import (
+    Application,
+    ApplicationEvent,
+    ApplicationMatch,
+    Job,
+)
 
 REQUIRED_COLUMNS = {
     "provider_identity_key",
@@ -46,6 +52,14 @@ REQUIRED_COLUMNS = {
 MISSING_IDENTITY_ERROR = (
     "informe provider_identity_key, application_url, external_reference ou empresa+titulo"
 )
+SUPPORTED_IMPORT_STATUSES = {
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.TEST,
+    ApplicationStatus.INTERVIEW,
+    ApplicationStatus.REJECTED,
+    ApplicationStatus.OFFER,
+    ApplicationStatus.WITHDRAWN,
+}
 
 
 @dataclass(frozen=True)
@@ -86,6 +100,9 @@ class ApplicationHistoryImportResult:
     conflicts: int
     created_applications: int
     updated_applications: int
+    unchanged: int
+    needs_review: int
+    created_matches: int
     items: list[ApplicationHistoryItemResult]
 
     def to_dict(self) -> dict[str, Any]:
@@ -101,6 +118,9 @@ class ApplicationHistoryImportResult:
                 "conflicts": self.conflicts,
                 "created_applications": self.created_applications,
                 "updated_applications": self.updated_applications,
+                "unchanged": self.unchanged,
+                "needs_review": self.needs_review,
+                "created_matches": self.created_matches,
             },
             "items": [
                 {
@@ -141,7 +161,13 @@ def validate_application_history_file(
     ]
     all_items = [*items, *missing_identity, *invalid]
     _ = allow_probable_matches
-    return _result_from_items(dry_run=True, items=all_items, created=0, updated=0)
+    return _result_from_items(
+        dry_run=True,
+        items=all_items,
+        created=0,
+        updated=0,
+        created_matches=0,
+    )
 
 
 def import_application_history(
@@ -157,6 +183,8 @@ def import_application_history(
     items: list[ApplicationHistoryItemResult] = [*invalid]
     created = 0
     updated = 0
+    created_matches = 0
+    seen_rows: set[str] = set()
     for row in rows:
         if not _has_useful_identity(row):
             items.append(
@@ -167,23 +195,50 @@ def import_application_history(
                 )
             )
             continue
+        row_fingerprint = _row_fingerprint(row)
+        if row_fingerprint in seen_rows:
+            items.append(
+                ApplicationHistoryItemResult(
+                    index=row.index,
+                    status="unchanged",
+                    errors=[],
+                    evidence={"deduplicated": True, "reason": "linha semantica repetida"},
+                )
+            )
+            continue
+        seen_rows.add(row_fingerprint)
         match = _match_history_row(session, row)
         if match.match_kind is ApplicationMatchKind.EXACT:
             application = None
+            status = "linked" if dry_run else "unchanged"
             if not dry_run and match.job_id is not None:
-                application, was_created = _upsert_application_from_history(
+                application, outcome = _upsert_application_from_history(
                     session,
                     settings,
                     row,
                     match.job_id,
+                    row_fingerprint=row_fingerprint,
                 )
-                created += 1 if was_created else 0
-                updated += 0 if was_created else 1
-                _record_match(session, row, match, application.id)
+                created += 1 if outcome == "created" else 0
+                updated += 1 if outcome == "updated" else 0
+                match_created = _record_match(
+                    session,
+                    row,
+                    match,
+                    application.id,
+                    row_fingerprint=row_fingerprint,
+                    application_key=application.application_key,
+                )
+                created_matches += 1 if match_created else 0
+                if outcome == "unchanged" and match_created:
+                    status = "updated"
+                    updated += 1
+                else:
+                    status = outcome
             items.append(
                 ApplicationHistoryItemResult(
                     index=row.index,
-                    status="linked",
+                    status=status,
                     match_kind=match.match_kind,
                     confidence=match.confidence,
                     job_id=match.job_id,
@@ -194,21 +249,40 @@ def import_application_history(
             continue
         if match.match_kind is ApplicationMatchKind.PROBABLE:
             if allow_probable_matches and match.job_id is not None and not dry_run:
-                application, was_created = _upsert_application_from_history(
+                application, outcome = _upsert_application_from_history(
                     session,
                     settings,
                     row,
                     match.job_id,
+                    row_fingerprint=row_fingerprint,
                 )
-                created += 1 if was_created else 0
-                updated += 0 if was_created else 1
-                _record_match(session, row, match, application.id)
-                status = "linked"
+                created += 1 if outcome == "created" else 0
+                updated += 1 if outcome == "updated" else 0
+                match_created = _record_match(
+                    session,
+                    row,
+                    match,
+                    application.id,
+                    row_fingerprint=row_fingerprint,
+                    application_key=application.application_key,
+                )
+                created_matches += 1 if match_created else 0
+                status = "updated" if outcome == "unchanged" and match_created else outcome
+                updated += 1 if outcome == "unchanged" and match_created else 0
                 application_id = application.id
             else:
+                match_created = False
                 if not dry_run:
-                    _record_match(session, row, match, None)
-                status = "probable"
+                    match_created = _record_match(
+                        session,
+                        row,
+                        match,
+                        None,
+                        row_fingerprint=row_fingerprint,
+                        application_key=None,
+                    )
+                    created_matches += 1 if match_created else 0
+                status = "needs_review" if dry_run or match_created else "unchanged"
                 application_id = None
             items.append(
                 ApplicationHistoryItemResult(
@@ -222,21 +296,34 @@ def import_application_history(
                 )
             )
             continue
+        match_created = False
         if not dry_run:
-            _record_match(session, row, match, None)
+            match_created = _record_match(
+                session,
+                row,
+                match,
+                None,
+                row_fingerprint=row_fingerprint,
+                application_key=None,
+            )
+            created_matches += 1 if match_created else 0
         items.append(
             ApplicationHistoryItemResult(
                 index=row.index,
-                status=match.match_kind.value.lower(),
+                status="needs_review" if dry_run or match_created else "unchanged",
                 match_kind=match.match_kind,
                 confidence=match.confidence,
                 job_id=match.job_id,
                 evidence=match.evidence,
             )
         )
-    if dry_run:
-        session.rollback()
-    return _result_from_items(dry_run=dry_run, items=items, created=created, updated=updated)
+    return _result_from_items(
+        dry_run=dry_run,
+        items=items,
+        created=created,
+        updated=updated,
+        created_matches=created_matches,
+    )
 
 
 def write_application_history_report(
@@ -309,6 +396,11 @@ def _row_from_mapping(index: int, raw: dict[str, Any]) -> ApplicationHistoryRow:
         status = parse_enum_value(ApplicationStatus, status_raw)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
+    if status not in SUPPORTED_IMPORT_STATUSES:
+        accepted = ", ".join(sorted(status.value for status in SUPPORTED_IMPORT_STATUSES))
+        raise ValueError(
+            f"status de importacao nao suportado: {status.value}. Valores aceitos: {accepted}."
+        )
     applied_at = _text(normalized.get("applied_at"))
     if applied_at:
         _parse_datetime(applied_at)
@@ -361,7 +453,9 @@ def _upsert_application_from_history(
     settings: Settings,
     row: ApplicationHistoryRow,
     job_id: int,
-) -> tuple[Application, bool]:
+    *,
+    row_fingerprint: str,
+) -> tuple[Application, str]:
     job = session.get(Job, job_id)
     if job is None:
         raise RadarError(f"Vaga nao encontrada: {job_id}")
@@ -383,16 +477,17 @@ def _upsert_application_from_history(
             notes=row.notes,
             application_url=row.application_url,
             source="history_import",
+            submitted_event_key=_event_key_for_row(row, key, ApplicationEventType.SUBMITTED),
         )
     else:
-        application.platform = row.platform or application.platform
-        application.external_reference = row.external_reference or application.external_reference
-        application.application_url = row.application_url or application.application_url
-        application.notes = row.notes or application.notes
-        application.updated_at = utc_now()
+        changed = _update_application_fields(application, row)
+        if changed:
+            application.updated_at = utc_now()
     if row.status is not ApplicationStatus.SUBMITTED:
         event_type = _event_type_for_status(row.status)
         if event_type is not None:
+            event_key = _event_key_for_row(row, key, event_type)
+            had_event = _application_event_exists(session, application.id, event_key)
             add_application_event(
                 session,
                 application.id,
@@ -400,8 +495,12 @@ def _upsert_application_from_history(
                 occurred_at=_parse_datetime(row.applied_at) if row.applied_at else None,
                 notes=row.notes,
                 source="history_import",
+                event_key=event_key,
             )
-    return application, created
+            changed = changed or not had_event if not created else not had_event
+    if created:
+        return application, "created"
+    return application, "updated" if changed else "unchanged"
 
 
 def _record_match(
@@ -409,7 +508,24 @@ def _record_match(
     row: ApplicationHistoryRow,
     match: _MatchResult,
     application_id: int | None,
-) -> None:
+    *,
+    row_fingerprint: str,
+    application_key: str | None,
+) -> bool:
+    fingerprint = _match_fingerprint(
+        row_fingerprint=row_fingerprint,
+        match=match,
+        application_key=application_key,
+    )
+    existing = session.scalar(
+        select(ApplicationMatch).where(ApplicationMatch.fingerprint == fingerprint)
+    )
+    if existing is not None:
+        if application_id is not None and existing.application_id is None:
+            existing.application_id = application_id
+            existing.status = ApplicationMatchStatus.LINKED
+            return True
+        return False
     status = (
         ApplicationMatchStatus.LINKED
         if application_id is not None
@@ -421,11 +537,13 @@ def _record_match(
             job_id=match.job_id,
             match_kind=match.match_kind,
             confidence=match.confidence,
+            fingerprint=fingerprint,
             evidence_json=json.dumps(match.evidence, ensure_ascii=False, sort_keys=True),
             status=status,
             created_at=utc_now(),
         )
     )
+    return True
 
 
 def _event_type_for_status(status: ApplicationStatus) -> ApplicationEventType | None:
@@ -450,6 +568,7 @@ def _result_from_items(
     items: list[ApplicationHistoryItemResult],
     created: int,
     updated: int,
+    created_matches: int,
 ) -> ApplicationHistoryImportResult:
     valid = sum(1 for item in items if item.status != "invalid")
     return ApplicationHistoryImportResult(
@@ -457,14 +576,109 @@ def _result_from_items(
         total=len(items),
         valid=valid,
         invalid=len(items) - valid,
-        linked=sum(1 for item in items if item.status == "linked"),
-        probable=sum(1 for item in items if item.status == "probable"),
+        linked=sum(
+            1
+            for item in items
+            if item.application_id is not None or item.status in {"linked", "created", "updated"}
+        ),
+        probable=sum(1 for item in items if item.match_kind is ApplicationMatchKind.PROBABLE),
         unmatched=sum(1 for item in items if item.match_kind is ApplicationMatchKind.UNMATCHED),
         conflicts=sum(1 for item in items if item.match_kind is ApplicationMatchKind.CONFLICT),
         created_applications=created,
         updated_applications=updated,
+        unchanged=sum(1 for item in items if item.status == "unchanged"),
+        needs_review=sum(1 for item in items if item.status == "needs_review"),
+        created_matches=created_matches,
         items=items,
     )
+
+
+def _update_application_fields(application: Application, row: ApplicationHistoryRow) -> bool:
+    changed = False
+    updates = {
+        "platform": row.platform,
+        "external_reference": row.external_reference,
+        "application_url": row.application_url,
+        "notes": row.notes,
+    }
+    for field_name, value in updates.items():
+        if value is not None and getattr(application, field_name) != value:
+            setattr(application, field_name, value)
+            changed = True
+    return changed
+
+
+def _application_event_exists(session: Session, application_id: int, event_key: str) -> bool:
+    return (
+        session.scalar(
+            select(ApplicationEvent.id).where(
+                ApplicationEvent.application_id == application_id,
+                ApplicationEvent.event_key == event_key,
+            )
+        )
+        is not None
+    )
+
+
+def _row_fingerprint(row: ApplicationHistoryRow) -> str:
+    return _stable_hash(
+        {
+            "provider_identity_key": row.provider_identity_key,
+            "application_url": row.application_url,
+            "company": row.company,
+            "title": row.title,
+            "platform": row.platform,
+            "applied_at": _canonical_datetime_text(row.applied_at),
+            "status": row.status.value,
+            "external_reference": row.external_reference,
+            "notes": row.notes,
+        }
+    )
+
+
+def _event_key_for_row(
+    row: ApplicationHistoryRow,
+    application_key: str,
+    event_type: ApplicationEventType,
+) -> str:
+    return "history:event:" + _stable_hash(
+        {
+            "source": "history_import",
+            "row": _row_fingerprint(row),
+            "application_key": application_key,
+            "event_type": event_type.value,
+            "occurred_at": _canonical_datetime_text(row.applied_at),
+        }
+    )
+
+
+def _match_fingerprint(
+    *,
+    row_fingerprint: str,
+    match: _MatchResult,
+    application_key: str | None,
+) -> str:
+    return _stable_hash(
+        {
+            "source": "history_import",
+            "row": row_fingerprint,
+            "match_kind": match.match_kind.value,
+            "job_id": match.job_id,
+            "application_key": application_key,
+            "method": match.evidence.get("method"),
+        }
+    )
+
+
+def _stable_hash(payload: dict[str, Any]) -> str:
+    return sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _canonical_datetime_text(value: str | None) -> str | None:
+    parsed = _parse_datetime(value)
+    return parsed.isoformat() if parsed is not None else None
 
 
 def _match(

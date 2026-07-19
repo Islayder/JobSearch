@@ -14,10 +14,11 @@ duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 - boards publicos Lever.
 - consultas publicas Gupy em modo `public_portal`.
 - historico local de candidaturas em JSON/CSV;
-- perfil profissional/curriculo local em YAML, JSON ou TXT estruturado.
+- perfil profissional/curriculo local em YAML, JSON ou TXT estruturado;
+- agenda local registrada manualmente ou derivada de dados locais.
 
 Nao ha crawling recursivo, IA, Gmail, geracao automatica de curriculo,
-preenchimento de formularios ou candidatura automatica.
+Google Calendar, preenchimento de formularios ou candidatura automatica.
 
 ## Usuario
 
@@ -83,6 +84,10 @@ A preparacao de candidatura e humana nesta versao. A aplicacao registra a
 estrutura de candidatura, fila de revisao e eventos, mas nao envia
 candidaturas, nao preenche formularios e nao altera curriculos.
 
+Estados de revisao e candidatura passam por uma politica central. Vagas
+descartadas, aplicadas, fechadas ou com candidatura existente nao sao
+recolocadas no fluxo manual comum por uma acao contraditoria.
+
 ## Perfil Profissional
 
 O perfil profissional e importado localmente e versionado. Ele pode conter
@@ -90,3 +95,15 @@ habilidades com evidencias, experiencias, projetos, formacao e idiomas. A
 comparacao vaga-curriculo preserva a versao usada na analise e diferencia
 `MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` e `AMBIGUOUS`, separando
 requisitos obrigatorios de desejaveis.
+
+Comparacoes sao historicas. A mesma vaga com a mesma versao de perfil, mesma
+versao de regras e mesmo hash de conteudo retorna o resultado existente; quando
+algum desses elementos muda, uma nova comparacao e criada.
+
+## Agenda Local
+
+A agenda local registra prazos, entrevistas, testes, cases, documentos,
+respostas de oferta e follow-ups. Eventos podem estar ligados a vaga,
+candidatura, ambas ou nenhuma delas. O sistema valida datas com timezone,
+intervalos e URLs de reuniao, mas nao cria evento em calendario externo, nao
+le e-mail e nao envia notificacao.

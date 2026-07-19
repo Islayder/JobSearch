@@ -141,6 +141,75 @@ def test_professional_profile_and_tracking_migration_adds_tables_and_downgrades(
     assert "profile_version_id" not in resume_version_columns
 
 
+def test_tracking_integrity_and_calendar_migration_round_trips_from_0008(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    config = alembic_config(settings)
+
+    command.upgrade(config, "0008_professional_profile_and_tracking")
+    command.upgrade(config, "head")
+    engine = create_engine(settings.database_url, future=True)
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        application_event_columns = {
+            column["name"] for column in inspector.get_columns("application_events")
+        }
+        application_match_columns = {
+            column["name"] for column in inspector.get_columns("application_matches")
+        }
+        comparison_columns = {
+            column["name"] for column in inspector.get_columns("job_profile_comparisons")
+        }
+        resume_columns = {column["name"] for column in inspector.get_columns("resumes")}
+    finally:
+        engine.dispose()
+
+    assert "career_events" in tables
+    assert "career_event_audits" in tables
+    assert "profile_activation_events" in tables
+    assert "event_key" in application_event_columns
+    assert "fingerprint" in application_match_columns
+    assert "job_content_hash" in comparison_columns
+    assert "profile_id" in resume_columns
+
+    command.downgrade(config, "0008_professional_profile_and_tracking")
+    engine = create_engine(settings.database_url, future=True)
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        application_event_columns = {
+            column["name"] for column in inspector.get_columns("application_events")
+        }
+        application_match_columns = {
+            column["name"] for column in inspector.get_columns("application_matches")
+        }
+        comparison_columns = {
+            column["name"] for column in inspector.get_columns("job_profile_comparisons")
+        }
+        resume_columns = {column["name"] for column in inspector.get_columns("resumes")}
+    finally:
+        engine.dispose()
+
+    assert "career_events" not in tables
+    assert "career_event_audits" not in tables
+    assert "profile_activation_events" not in tables
+    assert "event_key" not in application_event_columns
+    assert "fingerprint" not in application_match_columns
+    assert "job_content_hash" not in comparison_columns
+    assert "profile_id" not in resume_columns
+
+    command.upgrade(config, "head")
+    engine = create_engine(settings.database_url, future=True)
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+    finally:
+        engine.dispose()
+    assert "career_events" in tables
+
+
 def test_collection_scope_migration_backfills_existing_0003_rows(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     config = alembic_config(settings)

@@ -130,6 +130,7 @@ class ApplicationMatchStatus(ReadableEnum):
 class RequirementKind(ReadableEnum):
     MANDATORY = "MANDATORY"
     DESIRABLE = "DESIRABLE"
+    UNKNOWN = "UNKNOWN"
 
 
 class RequirementMatchStatus(ReadableEnum):
@@ -189,3 +190,31 @@ class RelevanceStatus(ReadableEnum):
     ADJACENT = "ADJACENT"
     UNRELATED = "UNRELATED"
     MANUAL_REVIEW = "MANUAL_REVIEW"
+
+
+class CareerEventType(ReadableEnum):
+    APPLICATION_DEADLINE = "APPLICATION_DEADLINE"
+    ASSESSMENT = "ASSESSMENT"
+    ASSESSMENT_DEADLINE = "ASSESSMENT_DEADLINE"
+    CASE_DEADLINE = "CASE_DEADLINE"
+    INTERVIEW = "INTERVIEW"
+    GROUP_DYNAMICS = "GROUP_DYNAMICS"
+    DOCUMENT_DEADLINE = "DOCUMENT_DEADLINE"
+    OFFER_RESPONSE_DEADLINE = "OFFER_RESPONSE_DEADLINE"
+    FOLLOW_UP = "FOLLOW_UP"
+    CUSTOM = "CUSTOM"
+
+
+class CareerEventSource(ReadableEnum):
+    MANUAL = "MANUAL"
+    JOB_DESCRIPTION = "JOB_DESCRIPTION"
+    EMAIL = "EMAIL"
+    ESTIMATED = "ESTIMATED"
+
+
+class CareerEventConfirmationStatus(ReadableEnum):
+    SUGGESTED = "SUGGESTED"
+    CONFIRMED = "CONFIRMED"
+    DISMISSED = "DISMISSED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"

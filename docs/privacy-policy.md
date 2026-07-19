@@ -31,6 +31,19 @@ um arquivo local estruturado, gravar hash e versao no banco local, mas nao
 versiona o arquivo real, nao gera curriculo e nao envia documentos para
 plataformas.
 
+## Agenda
+
+Eventos de agenda sao locais. O Radar nao cria eventos em Google Calendar, nao
+le Gmail, nao envia notificacoes externas e nao abre sessoes autenticadas.
+
+`meeting_url` e armazenada somente quando informada manualmente ou importada de
+fonte local autorizada. A validacao aceita apenas HTTP/HTTPS e rejeita URLs com
+credenciais, localhost, dominios `.local` e IPs privados literais. Essa
+validacao nao faz consulta de rede.
+
+Notas da agenda e das candidaturas podem conter contexto pessoal. Elas ficam no
+banco SQLite local e nos relatorios locais ignorados pelo Git.
+
 ## Exportacoes
 
 Relatorios em `data/exports/` podem conter dados operacionais ou pessoais. Eles

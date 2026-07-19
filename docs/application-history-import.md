@@ -36,6 +36,19 @@ Pelo menos um destes identificadores deve existir:
 - `external_reference`
 - `company` + `title`
 
+`status` aceita somente estados que representam eventos reais de historico:
+
+- `SUBMITTED`
+- `TEST`
+- `INTERVIEW`
+- `REJECTED`
+- `OFFER`
+- `WITHDRAWN`
+
+Estados operacionais internos, como `PREPARING`, `AWAITING_REVIEW`, `READY`,
+`FINAL_STAGE` e `CLOSED`, sao rejeitados com erro de validacao porque nao
+descrevem um evento externo comprovavel.
+
 ## Matching
 
 O importador classifica cada linha como:
@@ -56,3 +69,19 @@ Quando uma linha e ligada a uma vaga, o sistema cria ou atualiza `Application`,
 marca a vaga como `APPLIED`, cria eventos derivados do status e grava
 `ApplicationMatch` com evidencias resumidas. O arquivo de entrada deve ficar em
 `data/imports/`, que e ignorado pelo Git.
+
+Cada linha recebe um fingerprint deterministico derivado dos campos canonicos da
+linha. `ApplicationEvent.event_key` e `ApplicationMatch.fingerprint` tornam a
+importacao idempotente: reimportar o mesmo arquivo deve resultar em itens
+inalterados, sem duplicar candidaturas, eventos ou matches.
+
+Linhas `UNMATCHED`, `CONFLICT` ou `PROBABLE` sem permissao de aplicacao entram
+como `needs_review`. Elas preservam a evidencia do match, mas nao alteram vaga
+nem candidatura automaticamente.
+
+Dry-run nao grava mudancas e nao executa rollback na sessao do chamador. Isso
+permite validar o arquivo dentro de fluxos maiores sem desfazer alteracoes ja
+controladas por outra transacao.
+
+O relatorio da importacao separa criados, atualizados, inalterados, ignorados,
+erros, itens que precisam de revisao e matches criados.

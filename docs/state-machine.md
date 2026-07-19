@@ -76,6 +76,7 @@ stateDiagram-v2
     UNREVIEWED --> SHORTLISTED
     UNREVIEWED --> DISMISSED
     SEEN --> SHORTLISTED
+    SHORTLISTED --> SEEN
     SEEN --> DISMISSED
     SHORTLISTED --> DISMISSED
     DISMISSED --> UNREVIEWED: restore-job
@@ -85,8 +86,22 @@ stateDiagram-v2
 ```
 
 `JobReviewState` e o estado atual. `JobReviewEvent` e append-only e guarda a
-origem manual da mudanca. `restore-job` reavalia a vaga com as regras atuais,
-mas nao restaura vagas `APPLIED` ou `CLOSED`.
+origem manual da mudanca. Todas as transicoes passam pela politica central de
+revisao antes de alterar `Job.status`, `JobReviewState` ou gravar evento.
+
+Transicoes validas:
+
+- `UNREVIEWED` para `SEEN`, `SHORTLISTED`, `DISMISSED` ou `APPLIED`.
+- `SEEN` para `SHORTLISTED`, `DISMISSED` ou `APPLIED`.
+- `SHORTLISTED` para `SEEN`, `DISMISSED` ou `APPLIED`.
+- `DISMISSED` para `UNREVIEWED` somente via `restore-job`.
+
+Estados `APPLIED`, `CLOSED` e `EXPIRED` bloqueiam a revisao manual comum.
+Vagas com candidatura existente tambem bloqueiam `mark-seen`, `shortlist` e
+`dismiss-job`; a vaga deve ser acompanhada pelo historico de candidatura.
+
+`restore-job` limpa o descarte humano ativo, reavalia a vaga com as regras
+atuais e nao restaura vagas `APPLIED`, `CLOSED` ou `EXPIRED`.
 
 ## Candidatura
 
@@ -118,3 +133,33 @@ Eventos manuais ou importados atualizam o resumo da candidatura, mas nao abrem
 links externos e nao executam candidatura em plataforma. `SUBMITTED` registra
 que o usuario aplicou fora do Radar; `CONFIRMATION_RECEIVED` e eventos
 posteriores acompanham o processo.
+
+O resumo de `Application.status` e `Application.stage` e derivado por redutor de
+timeline. O redutor ordena eventos por data e usa a sequencia resultante para
+reconstruir a etapa atual. Eventos informativos, como confirmacao recebida e
+atualizacao de processo, nao regridem uma etapa mais avancada. Um evento antigo
+inserido depois nao derruba uma etapa mais recente. Eventos terminais, como
+rejeicao ou retirada, podem ser substituidos por um evento posterior explicito,
+por exemplo uma entrevista registrada depois de uma rejeicao importada
+incorretamente.
+
+`ApplicationEvent.event_key` evita duplicidade em reprocessamentos. Quando um
+evento precisa ser recalculado, `radar rebuild-application-stage` recompoe o
+estado resumido a partir da timeline persistida.
+
+## Agenda Local
+
+```mermaid
+stateDiagram-v2
+    [*] --> SUGGESTED
+    [*] --> CONFIRMED: evento manual
+    SUGGESTED --> CONFIRMED
+    SUGGESTED --> DISMISSED
+    CONFIRMED --> COMPLETED
+    CONFIRMED --> CANCELLED
+```
+
+Eventos de agenda nao fazem integracao externa. Eventos manuais podem nascer
+confirmados. Eventos vindos de descricao de vaga, e-mail importado ou estimativa
+nascem como sugestao. Eventos estimados nunca viram compromisso confirmado sem
+nova entrada manual mais confiavel.

@@ -8,6 +8,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from radar_vagas.applications.guard import ApplicationGuard, ApplicationGuardResult
+from radar_vagas.applications.state import (
+    apply_restore_transition,
+    apply_review_transition,
+    ensure_can_register_application,
+    rebuild_application_state,
+)
 from radar_vagas.canonicalization.normalize import (
     normalize_company_name,
     normalize_title,
@@ -160,21 +166,18 @@ def review_queue(
 def mark_seen(session: Session, job_id: int, *, source: str = "manual") -> JobReviewState:
     job = _job_or_raise(session, job_id)
     state = _get_or_create_review_state(session, job)
-    if state.state in {ReviewState.SEEN, ReviewState.SHORTLISTED, ReviewState.APPLIED}:
+    transition = apply_review_transition(job, state, ReviewState.SEEN)
+    if not transition.changed:
         return state
-    previous_status = job.status
-    previous_state = state.state
-    if job.status in {JobStatus.RECOMMENDED, JobStatus.ELIGIBLE}:
-        job.status = JobStatus.SEEN
-    state.state = ReviewState.SEEN
+    job.updated_at = utc_now()
     state.updated_at = utc_now()
     _add_review_event(
         session,
         job=job,
-        event_type=ReviewEventType.SEEN,
-        previous_job_status=previous_status,
-        previous_review_state=previous_state,
-        new_review_state=state.state,
+        event_type=transition.event_type,
+        previous_job_status=transition.previous_job_status,
+        previous_review_state=transition.previous_review_state,
+        new_review_state=transition.new_review_state,
         source=source,
     )
     return state
@@ -183,19 +186,18 @@ def mark_seen(session: Session, job_id: int, *, source: str = "manual") -> JobRe
 def shortlist_job(session: Session, job_id: int, *, source: str = "manual") -> JobReviewState:
     job = _job_or_raise(session, job_id)
     state = _get_or_create_review_state(session, job)
-    if state.state is ReviewState.SHORTLISTED:
+    transition = apply_review_transition(job, state, ReviewState.SHORTLISTED)
+    if not transition.changed:
         return state
-    previous_state = state.state
-    previous_status = job.status
-    state.state = ReviewState.SHORTLISTED
+    job.updated_at = utc_now()
     state.updated_at = utc_now()
     _add_review_event(
         session,
         job=job,
-        event_type=ReviewEventType.SHORTLISTED,
-        previous_job_status=previous_status,
-        previous_review_state=previous_state,
-        new_review_state=state.state,
+        event_type=transition.event_type,
+        previous_job_status=transition.previous_job_status,
+        previous_review_state=transition.previous_review_state,
+        new_review_state=transition.new_review_state,
         source=source,
     )
     return state
@@ -211,23 +213,20 @@ def dismiss_job(
 ) -> JobReviewState:
     job = _job_or_raise(session, job_id)
     state = _get_or_create_review_state(session, job)
-    if job.status is JobStatus.DISMISSED and state.state is ReviewState.DISMISSED:
+    transition = apply_review_transition(job, state, ReviewState.DISMISSED)
+    if not transition.changed and state.reason_code == reason_code and state.notes == notes:
         return state
-    previous_status = job.status
-    previous_state = state.state
-    job.status = JobStatus.DISMISSED
     job.updated_at = utc_now()
-    state.state = ReviewState.DISMISSED
     state.reason_code = reason_code
     state.notes = notes
     state.updated_at = utc_now()
     _add_review_event(
         session,
         job=job,
-        event_type=ReviewEventType.DISMISSED,
-        previous_job_status=previous_status,
-        previous_review_state=previous_state,
-        new_review_state=state.state,
+        event_type=transition.event_type,
+        previous_job_status=transition.previous_job_status,
+        previous_review_state=transition.previous_review_state,
+        new_review_state=transition.new_review_state,
         reason_code=reason_code,
         notes=notes,
         source=source,
@@ -243,24 +242,18 @@ def restore_job(
     source: str = "manual",
 ) -> Job:
     job = _job_or_raise(session, job_id)
-    if job.status is JobStatus.APPLIED:
-        raise RadarError("Vaga aplicada nao pode ser restaurada pela fila de revisao.")
-    if job.status is JobStatus.CLOSED:
-        raise RadarError("Vaga fechada nao e reaberta automaticamente pela fila de revisao.")
     state = _get_or_create_review_state(session, job)
-    previous_status = job.status
-    previous_state = state.state
-    job.status = JobStatus.NEW
-    state.state = ReviewState.UNREVIEWED
+    transition = apply_restore_transition(job, state)
+    job.updated_at = utc_now()
     state.updated_at = utc_now()
     evaluate_job_record(session, job, settings, job_status_override=JobStatus.NEW)
     _add_review_event(
         session,
         job=job,
-        event_type=ReviewEventType.RESTORED,
-        previous_job_status=previous_status,
-        previous_review_state=previous_state,
-        new_review_state=state.state,
+        event_type=transition.event_type,
+        previous_job_status=transition.previous_job_status,
+        previous_review_state=transition.previous_review_state,
+        new_review_state=transition.new_review_state,
         source=source,
     )
     return job
@@ -277,9 +270,11 @@ def mark_applied(
     notes: str | None = None,
     application_url: str | None = None,
     source: str = "manual",
+    submitted_event_key: str | None = None,
 ) -> Application:
     job = _job_or_raise(session, job_id)
     state = _get_or_create_review_state(session, job)
+    ensure_can_register_application(job, state)
     application_key = application_key_for_job(
         job,
         external_reference=external_reference,
@@ -299,8 +294,7 @@ def mark_applied(
             stage=ApplicationStage.APPLIED,
         )
         session.add(application)
-    previous_status = job.status
-    previous_state = state.state
+    transition = apply_review_transition(job, state, ReviewState.APPLIED)
     previous_ranking_score = job.decision.ranking_score if job.decision else None
     previous_ranking_breakdown = job.decision.ranking_breakdown_json if job.decision else None
 
@@ -312,37 +306,33 @@ def mark_applied(
         application_url or application.application_url or job.application_url
     )
     application.notes = notes or application.notes
-    application.status = ApplicationStatus.SUBMITTED
-    application.stage = application.stage or ApplicationStage.APPLIED
     application.updated_at = utc_now()
-    job.status = JobStatus.APPLIED
     job.updated_at = utc_now()
-    state.state = ReviewState.APPLIED
     state.updated_at = utc_now()
     session.flush()
 
+    submitted_key = submitted_event_key or f"application:{application.application_key}:submitted"
     if created or not _has_application_event(application, ApplicationEventType.SUBMITTED):
         session.add(
             ApplicationEvent(
-                application_id=application.id,
+                application=application,
+                event_key=submitted_key,
                 event_type=ApplicationEventType.SUBMITTED,
                 occurred_at=application.applied_at or utc_now(),
                 source=source,
                 notes=notes,
             )
         )
-    if (
-        created
-        or previous_status is not JobStatus.APPLIED
-        or previous_state is not ReviewState.APPLIED
-    ):
+        session.flush()
+    rebuild_application_state(application)
+    if transition.changed or created:
         _add_review_event(
             session,
             job=job,
-            event_type=ReviewEventType.APPLIED,
-            previous_job_status=previous_status,
-            previous_review_state=previous_state,
-            new_review_state=state.state,
+            event_type=transition.event_type,
+            previous_job_status=transition.previous_job_status,
+            previous_review_state=transition.previous_review_state,
+            new_review_state=transition.new_review_state,
             notes=notes,
             source=source,
         )
@@ -365,19 +355,34 @@ def add_application_event(
     occurred_at: datetime | None = None,
     notes: str | None = None,
     source: str = "manual",
+    event_key: str | None = None,
 ) -> ApplicationEvent:
     application = session.get(Application, application_id)
     if application is None:
         raise RadarError(f"Candidatura nao encontrada: {application_id}")
+    if event_key is not None:
+        existing = session.scalar(
+            select(ApplicationEvent).where(
+                ApplicationEvent.application_id == application.id,
+                ApplicationEvent.event_key == event_key,
+            )
+        )
+        if existing is not None:
+            rebuild_application_state(application)
+            application.updated_at = utc_now()
+            return existing
     event = ApplicationEvent(
-        application_id=application.id,
+        application=application,
+        event_key=event_key,
         event_type=event_type,
         occurred_at=occurred_at or utc_now(),
         source=source,
         notes=notes,
     )
     session.add(event)
-    _apply_application_event_status(application, event_type)
+    session.flush()
+    rebuild_application_state(application)
+    application.updated_at = utc_now()
     return event
 
 
@@ -486,56 +491,6 @@ def _query_count(session: Session, job_id: int) -> int:
         )
     )
     return int(count or 0)
-
-
-def _apply_application_event_status(
-    application: Application,
-    event_type: ApplicationEventType,
-) -> None:
-    if event_type is ApplicationEventType.SUBMITTED:
-        application.status = ApplicationStatus.SUBMITTED
-        application.stage = ApplicationStage.APPLIED
-    elif event_type in {
-        ApplicationEventType.CONFIRMATION_RECEIVED,
-        ApplicationEventType.PROCESS_UPDATE,
-    }:
-        application.stage = ApplicationStage.AWAITING_UPDATE
-    elif event_type in {
-        ApplicationEventType.ASSESSMENT_INVITED,
-    }:
-        application.status = ApplicationStatus.TEST
-        application.stage = ApplicationStage.ASSESSMENT_RECEIVED
-    elif event_type in {
-        ApplicationEventType.ASSESSMENT_COMPLETED,
-    }:
-        application.status = ApplicationStatus.TEST
-        application.stage = ApplicationStage.ASSESSMENT_COMPLETED
-    elif event_type is ApplicationEventType.CASE_RECEIVED:
-        application.status = ApplicationStatus.TEST
-        application.stage = ApplicationStage.CASE_RECEIVED
-    elif event_type is ApplicationEventType.CASE_SUBMITTED:
-        application.status = ApplicationStatus.TEST
-        application.stage = ApplicationStage.CASE_SUBMITTED
-    elif event_type in {
-        ApplicationEventType.INTERVIEW_INVITED,
-    }:
-        application.status = ApplicationStatus.INTERVIEW
-        application.stage = ApplicationStage.INTERVIEW_SCHEDULED
-    elif event_type in {
-        ApplicationEventType.INTERVIEW_COMPLETED,
-    }:
-        application.status = ApplicationStatus.INTERVIEW
-        application.stage = ApplicationStage.INTERVIEW_COMPLETED
-    elif event_type is ApplicationEventType.REJECTED:
-        application.status = ApplicationStatus.REJECTED
-        application.stage = ApplicationStage.REJECTED
-    elif event_type is ApplicationEventType.OFFER_RECEIVED:
-        application.status = ApplicationStatus.OFFER
-        application.stage = ApplicationStage.OFFER_RECEIVED
-    elif event_type is ApplicationEventType.WITHDRAWN:
-        application.status = ApplicationStatus.WITHDRAWN
-        application.stage = ApplicationStage.WITHDRAWN
-    application.updated_at = utc_now()
 
 
 def exact_job_by_provider_identity(

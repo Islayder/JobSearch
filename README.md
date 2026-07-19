@@ -6,8 +6,8 @@ unico usuario. A versao atual trabalha com fixtures, arquivos locais JSON/CSV,
 coletores publicos de vagas, revisao manual e acompanhamento local de
 candidaturas.
 
-Nao ha IA, Gmail, geracao automatica de curriculo, preenchimento de formularios
-ou candidatura automatica nesta etapa.
+Nao ha IA, Gmail, Google Calendar, geracao automatica de curriculo,
+preenchimento de formularios ou candidatura automatica nesta etapa.
 
 ## Requisitos
 
@@ -133,6 +133,19 @@ radar import-application-history data/imports/applications.csv --dry-run
 radar import-application-history data/imports/applications.csv --no-dry-run
 ```
 
+Registre compromissos e prazos locais:
+
+```powershell
+radar agenda
+radar agenda --days 30
+radar agenda --type interview
+radar add-agenda-event --type interview --title "Entrevista" --starts-at 2026-07-21T10:00:00-03:00 --timezone America/Sao_Paulo
+radar show-agenda-event 1
+radar confirm-agenda-event 1
+radar complete-agenda-event 1
+radar cancel-agenda-event 1
+```
+
 ## Marco 4.1
 
 O pipeline de descoberta Gupy usa a mesma entrada canonica de relevancia no
@@ -212,6 +225,7 @@ ignorados.
 - `docs/professional-profile.md`
 - `docs/application-tracking.md`
 - `docs/application-history-import.md`
+- `docs/calendar.md`
 - `docs/privacy-policy.md`
 - `docs/collector-development-playbook.md`
 
@@ -221,11 +235,11 @@ A versao atual entrega ingestao por JSON/CSV local, coleta publica por JSON-LD
 JobPosting, Greenhouse, Lever e Gupy Public Portal, deduplicacao deterministica,
 avaliacao de elegibilidade, relevancia profissional, ranking explicavel,
 auditoria de importacao/coleta, fila de revisao, acompanhamento manual de
-candidaturas, importacao de historico local, perfil profissional versionado e
-comparacao explicavel entre vaga e curriculo.
+candidaturas, importacao de historico local, perfil profissional versionado,
+comparacao explicavel entre vaga e curriculo e agenda local.
 Boards persistidos sao isolados por escopo estavel de coletor e key/token/URL;
 o nome da empresa e apenas informacao auxiliar de exibicao.
 
 Pandape, Solides, LinkedIn, Indeed, crawling recursivo, IA, geracao de
-curriculo por IA, Gmail, Playwright, formularios e candidatura automatica ficam
-fora desta etapa.
+curriculo por IA, Gmail, Google Calendar, Playwright, formularios e candidatura
+automatica ficam fora desta etapa.

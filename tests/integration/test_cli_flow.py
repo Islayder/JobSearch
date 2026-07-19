@@ -69,6 +69,9 @@ def test_full_cli_flow_and_fixture_idempotency(tmp_path: Path) -> None:
     assert compatibility_result.exit_code == 0, compatibility_result.output
     assert "Requisitos" in compatibility_result.output
 
+    agenda_result = runner.invoke(app, ["agenda"], env=env)
+    assert agenda_result.exit_code == 0, agenda_result.output
+
     settings = Settings(database_url=env["RADAR_DATABASE_URL"], config_dir=PROJECT_ROOT / "config")
     with session_scope(settings) as session:
         assert session.scalar(select(func.count(Posting.id))) == 18
