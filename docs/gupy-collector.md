@@ -27,6 +27,8 @@ Campos observados no item publico: `id`, `companyId`, `name`, `description`,
 `careerPageId`, `careerPageName`, `careerPageLogo`, `careerPageUrl`, `type`,
 `publishedDate`, `applicationDeadline`, `isRemoteWork`, `city`, `state`,
 `country`, `jobUrl`, `badges`, `workplaceType`, `disabilities`, `skills`.
+Departamento, area e tecnologias sao aproveitados quando aparecem nesses campos
+publicos, especialmente `careerPageName` e `skills`.
 
 As paginas de carreira em subdominios `*.gupy.io` renderizam HTML publico com
 `__NEXT_DATA__` e uma lista resumida de vagas. Esse modo nao foi implementado
@@ -52,9 +54,18 @@ O coletor `gupy` suporta `mode: public_portal` e usa autoridade
 - usa allowlist do host `employability-portal.gupy.io`;
 - preserva URL publica da vaga em `*.gupy.io` sem acessa-la como candidatura;
 - deduplica por `gupy:<job_id>`;
+- preserva campos estruturados para relevancia reproduzivel;
 - marca truncamento como parcial;
 - detecta pagina repetida como parcial;
 - ignora itens invalidos sem interromper a pagina inteira;
 - nao fecha vagas por ausencia.
+
+## Controle de Rede e Piloto
+
+Consultas Gupy devem passar pelo cliente HTTP central, com allowlist do host,
+intervalo minimo por host e orcamento global quando executadas por
+`collect-search-plan`. Um piloto persistente deve usar limites baixos, gerar
+relatorio ignorado em `data/exports/`, preservar backup local ignorado e nao
+executar qualquer acao de candidatura.
 
 Fixtures de teste sao sinteticas e nao copiam descricoes reais.

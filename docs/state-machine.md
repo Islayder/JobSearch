@@ -24,6 +24,10 @@ Consultas de descoberta (`DISCOVERY_QUERY`) e paginas individuais
 parcial ou repetida apenas registra a execucao e nao interpreta ausencia como
 encerramento.
 
+Quando uma consulta de descoberta encontra uma publicacao fechada ou pertencente
+a outro escopo autoritativo, ela registra a observacao sem reabrir, fechar,
+zerar ausencia ou atualizar `last_seen_at` autoritativo.
+
 ## Vaga
 
 ```mermaid
@@ -56,6 +60,7 @@ fica parada em `NEW`: pode voltar como `ELIGIBLE`, `RECOMMENDED`,
 `DISMISSED`, `APPLIED` e vagas com candidatura existente nao voltam ao ranking
 automaticamente por causa de uma mudanca ou reaparecimento de publicacao.
 Quando houver candidatura previa, a vaga passa a ser acompanhada como historico.
+`radar reevaluate-jobs` segue a mesma protecao e nao sobrescreve esses estados.
 
 Relevancia profissional afeta a transicao inicial: `UNRELATED` leva a
 `ARCHIVED`, `MANUAL_REVIEW` leva a `PENDING_REVIEW`, `CORE` e `ADJACENT`

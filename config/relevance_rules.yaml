@@ -1,6 +1,6 @@
-version: "2026-07-19"
+version: "2026-07-19.1"
 core_terms:
-  - análise de dados
+  - analise de dados
   - dados
   - data analytics
   - analytics
@@ -11,40 +11,58 @@ core_terms:
   - Python
   - engenharia de dados
   - data engineering
-  - ciência de dados
+  - ciencia de dados
   - data science
-  - inteligência de negócios
-  - inteligência de mercado
+  - inteligencia de negocios
+  - inteligencia de mercado
   - software
   - desenvolvedor
   - desenvolvedora
   - desenvolvimento
   - tecnologia
-  - automação
+  - automacao
   - QA
   - testes automatizados
   - produto de tecnologia
-adjacent_terms:
-  - crédito
+strong_adjacent_terms:
+  - credito
   - risco
   - riscos
   - fraude
   - pricing
-  - planejamento
-  - finanças
   - CRM
   - marketing analytics
   - performance
   - People Analytics
-  - operações orientadas a dados
-  - operações
-  - logística analítica
-  - auditoria com dados
+contextual_adjacent_terms:
+  - operacoes
   - processos
+  - planejamento
+  - financas
   - produto
+  - logistica
+  - auditoria
   - indicadores
-  - relatórios
-  - automação de processos
+  - relatorios
+  - automacao de processos
+supporting_context_terms:
+  - analise
+  - dados
+  - indicadores
+  - metricas
+  - dashboard
+  - dashboards
+  - Power BI
+  - SQL
+  - Python
+  - automacao
+  - BI
+  - analytics
+  - sistemas
+  - relatorios analiticos
+  - performance quantitativa
+  - segmentacao
+  - campanhas
 technology_terms:
   - SQL
   - Python
@@ -57,16 +75,22 @@ technology_terms:
   - Git
   - cloud
 negative_terms:
-  - digitação de dados
+  - digitacao de dados
   - cadastro de dados
   - operador de caixa
   - auxiliar administrativo
-  - recepção
+  - estagio administrativo
+  - recepcao
   - vendas
+  - contas a pagar
   - atendimento ao cliente
   - telemarketing
   - estoque
-  - logística operacional
+  - logistica operacional
+  - apoio operacional
+  - tarefas administrativas
+  - Excel basico
+  - CRM operacional
 weights:
   title: 5
   department: 3
@@ -80,6 +104,6 @@ thresholds:
   strong_negative: 6
 explanations:
   core: Sinais principais de dados, tecnologia ou software encontrados.
-  adjacent: Sinais adjacentes com uso potencial de análise, indicadores ou processos.
-  manual_review: Há poucos sinais profissionais claros; revisar manualmente.
-  unrelated: Não há sinais suficientes da área alvo ou há sinais negativos fortes.
+  adjacent: Sinais adjacentes com contexto analitico ou tecnico suficiente.
+  manual_review: Ha poucos sinais profissionais claros; revisar manualmente.
+  unrelated: Nao ha sinais suficientes da area alvo ou ha sinais negativos fortes.

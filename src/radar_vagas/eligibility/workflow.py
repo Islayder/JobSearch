@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -25,7 +26,10 @@ from radar_vagas.eligibility.service import (
 )
 from radar_vagas.persistence.models import Application, Decision, Job
 from radar_vagas.ranking.service import RankingInput, rank_job
-from radar_vagas.relevance.service import RoleRelevanceInput, evaluate_role_relevance
+from radar_vagas.relevance.service import (
+    build_role_relevance_input_from_job,
+    evaluate_role_relevance,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,22 @@ class EvaluationSummary:
     ineligible: int
     track_only: int
     recommended: int
+
+
+@dataclass(frozen=True)
+class ReevaluateJobChange:
+    job_id: int
+    before: dict[str, Any]
+    after: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ReevaluateJobsSummary:
+    total: int
+    changed: int
+    unchanged: int
+    dry_run: bool
+    changes: list[ReevaluateJobChange]
 
 
 def evaluate_all_jobs(session: Session, settings: Settings) -> EvaluationSummary:
@@ -56,7 +76,13 @@ def evaluate_job_by_id(session: Session, job_id: int, settings: Settings) -> Dec
     return evaluate_job_record(session, job, settings)
 
 
-def evaluate_job_record(session: Session, job: Job, settings: Settings) -> Decision:
+def evaluate_job_record(
+    session: Session,
+    job: Job,
+    settings: Settings,
+    *,
+    job_status_override: JobStatus | None = None,
+) -> Decision:
     rules = load_eligibility_rules(settings.config_dir)
     ranking_weights = load_ranking_weights(settings.config_dir)
     relevance_rules = load_relevance_rules(settings.config_dir)
@@ -68,7 +94,7 @@ def evaluate_job_record(session: Session, job: Job, settings: Settings) -> Decis
             company_name=job.company.canonical_name,
             company_aliases=tuple(alias.alias for alias in job.company.aliases),
             company_is_blocked=job.company.is_blocked,
-            job_status=job.status,
+            job_status=job_status_override or job.status,
             employment_type=job.employment_type,
             work_model=job.work_model,
             city=job.city,
@@ -82,10 +108,7 @@ def evaluate_job_record(session: Session, job: Job, settings: Settings) -> Decis
         blocked_reasons,
     )
     relevance = evaluate_role_relevance(
-        RoleRelevanceInput(
-            title=job.canonical_title,
-            description=job.description,
-        ),
+        build_role_relevance_input_from_job(job),
         relevance_rules,
     )
     effective_eligibility = _apply_relevance_to_eligibility(eligibility, relevance.status)
@@ -103,7 +126,7 @@ def evaluate_job_record(session: Session, job: Job, settings: Settings) -> Decis
             published_at=job.published_at,
             hours_per_day=job.hours_per_day,
             hours_per_week=job.hours_per_week,
-            status=job.status,
+            status=job_status_override or job.status,
             relevance_status=relevance.status,
         ),
         effective_eligibility.status,
@@ -151,6 +174,53 @@ def evaluate_job_record(session: Session, job: Job, settings: Settings) -> Decis
     return decision
 
 
+def reevaluate_jobs(
+    session: Session,
+    settings: Settings,
+    *,
+    provider: str | None = None,
+    status: JobStatus | None = None,
+    only_missing_relevance: bool = False,
+    limit: int | None = None,
+    dry_run: bool = False,
+) -> ReevaluateJobsSummary:
+    statement = select(Job).order_by(Job.id.asc())
+    if status is not None:
+        statement = statement.where(Job.status == status)
+    if provider is not None:
+        from radar_vagas.persistence.models import Posting
+
+        statement = statement.where(Job.postings.any(Posting.provider == provider.strip().lower()))
+    if only_missing_relevance:
+        statement = statement.where(
+            Job.decision.has(Decision.relevance_status.is_(None)) | ~Job.decision.has()
+        )
+    if limit is not None:
+        statement = statement.limit(limit)
+
+    jobs = session.scalars(statement).all()
+    changes: list[ReevaluateJobChange] = []
+    for job in jobs:
+        before = _decision_snapshot(job)
+        status_override = JobStatus.NEW if job.status is JobStatus.ARCHIVED else None
+        evaluate_job_record(session, job, settings, job_status_override=status_override)
+        session.flush()
+        after = _decision_snapshot(job)
+        if before != after:
+            changes.append(ReevaluateJobChange(job_id=job.id, before=before, after=after))
+
+    if dry_run:
+        session.rollback()
+
+    return ReevaluateJobsSummary(
+        total=len(jobs),
+        changed=len(changes),
+        unchanged=len(jobs) - len(changes),
+        dry_run=dry_run,
+        changes=changes,
+    )
+
+
 def _apply_relevance_to_eligibility(
     eligibility: EligibilityResult,
     relevance_status: RelevanceStatus,
@@ -187,6 +257,8 @@ def _next_job_status(
     recommended_min_score: int,
     has_application: bool,
 ) -> JobStatus:
+    if current_status in {JobStatus.APPLIED, JobStatus.DISMISSED, JobStatus.CLOSED}:
+        return current_status
     if eligibility_status is EligibilityStatus.INELIGIBLE:
         return JobStatus.ARCHIVED
     if eligibility_status is EligibilityStatus.MANUAL_REVIEW:
@@ -198,6 +270,33 @@ def _next_job_status(
     if ranking_score is not None and ranking_score >= recommended_min_score:
         return JobStatus.RECOMMENDED
     return JobStatus.ELIGIBLE
+
+
+def _decision_snapshot(job: Job) -> dict[str, Any]:
+    decision = job.decision
+    if decision is None:
+        return {
+            "job_status": job.status.value,
+            "eligibility_status": None,
+            "reason_code": None,
+            "ranking_score": None,
+            "relevance_status": None,
+            "relevance_score": None,
+            "relevance_rules_version": None,
+        }
+    return {
+        "job_status": job.status.value,
+        "eligibility_status": decision.eligibility_status.value,
+        "reason_code": decision.reason_code,
+        "ranking_score": decision.ranking_score,
+        "relevance_status": (
+            decision.relevance_status.value if decision.relevance_status is not None else None
+        ),
+        "relevance_score": decision.relevance_score,
+        "relevance_rules_version": decision.relevance_rules_version,
+        "relevance_reason_json": decision.relevance_reason_json,
+        "ranking_breakdown_json": decision.ranking_breakdown_json,
+    }
 
 
 @dataclass

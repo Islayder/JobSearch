@@ -64,6 +64,11 @@ fonte e associacao opcional a `Job`. Para coleta incremental, tambem guarda:
 - `provider_scope`
 - `provider_external_id`
 - `provider_identity_key`
+- `raw_department`
+- `raw_area`
+- `raw_requirements`
+- `raw_responsibilities`
+- `raw_technologies_json`
 - `is_active`
 - `missing_count`
 - `closed_reason`
@@ -86,7 +91,9 @@ prioridade, tags, status e historico de execucao.
 `DiscoveryHit` registra que uma consulta encontrou uma publicacao em uma
 `SourceRun`. Ele aponta para `SearchQuery`, `SourceRun`, `Posting` e `Job`
 quando disponiveis, e guarda posicao, pagina e metadados sanitizados sem
-descricao integral.
+descricao integral. `match_status` pode indicar `new`, `known`, `changed` ou
+`lifecycle_conflict`. O conflito aparece quando a consulta observacional encontra
+uma publicacao fechada ou inativa sem ter autoridade para reabrir ou fechar.
 
 `PostingRevision` registra mudancas observadas em uma publicacao conhecida:
 
@@ -99,7 +106,8 @@ descricao integral.
 O HTML integral de respostas externas nao e duplicado em revisoes.
 
 `Job` guarda a vaga canonica com tipo, modalidade, localidade, remuneracao,
-status e campos minimos para futura compatibilidade academica.
+status, departamento, area, requisitos, responsabilidades, tecnologias em JSON e
+campos minimos para futura compatibilidade academica.
 
 `Decision` guarda a ultima avaliacao de elegibilidade, motivo, nota,
 detalhamento e relevancia profissional (`relevance_status`, `relevance_score`,

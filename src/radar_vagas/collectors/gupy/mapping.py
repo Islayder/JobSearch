@@ -32,6 +32,10 @@ def map_gupy_job(
     company = as_text(job.get("careerPageName")) or _company_from_url(public_url)
     work_model = _work_model(workplace_type, title)
     remote_country_scope = _remote_country_scope(work_model, country)
+    skills = job.get("skills")
+    technologies = (
+        [str(item) for item in skills if str(item).strip()] if isinstance(skills, list) else []
+    )
 
     return ImportedPosting(
         source_name=source_name,
@@ -46,6 +50,9 @@ def map_gupy_job(
         company=company,
         location=_location(city=city, state=state, country=country, workplace_type=workplace_type),
         description=html_to_text(as_text(job.get("description")) or ""),
+        department=as_text(job.get("department")),
+        area=as_text(job.get("department")),
+        technologies=technologies,
         published_at=_parse_datetime(job.get("publishedDate")),
         expires_at=_parse_datetime(job.get("applicationDeadline")),
         employment_type=_employment_type(job_type, title),

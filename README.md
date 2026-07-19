@@ -83,17 +83,34 @@ radar query-health
 
 Consultas de descoberta sao observacionais. Elas podem encontrar, atualizar e
 registrar ocorrencias, mas nunca fecham publicacoes por ausencia.
+O plano de busca aplica orcamento global de requisicoes, itens e duracao para
+evitar expansao acidental de rede.
 
 Avalie e consulte resultados:
 
 ```powershell
 radar evaluate-all
+radar reevaluate-jobs --dry-run
 radar list-jobs
+radar list-jobs --provider gupy --limit 25
 radar show-job 1
 radar stats
 radar show-config
 radar doctor
 ```
+
+## Marco 4.1
+
+O pipeline de descoberta Gupy usa a mesma entrada canonica de relevancia no
+dry-run e na persistencia, preservando departamento, area, requisitos,
+responsabilidades e tecnologias quando os coletores fornecem esses dados.
+Consultas de descoberta continuam sem autoridade de fechamento: elas registram
+observacoes e hits, mas nao transferem propriedade de escopo nem reabrem ou
+fecham publicacoes de boards autoritativos.
+
+`radar reevaluate-jobs` permite recalcular relevancia, elegibilidade e ranking
+das vagas ja persistidas. A reavaliacao preserva estados protegidos como
+`APPLIED`, `DISMISSED` e vagas com candidatura registrada.
 
 ## Testes e Qualidade
 

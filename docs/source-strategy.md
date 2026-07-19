@@ -51,6 +51,12 @@ Quando uma publicacao conhecida aparece igual:
 - zera ausencias;
 - nao recalcula ranking sem necessidade.
 
+Se a publicacao conhecida pertence a outro escopo autoritativo e foi encontrada
+por uma consulta de descoberta, a execucao e tratada como observacao. Nesse
+caso ela nao altera propriedade de escopo, fonte autoritativa, ciclo de vida,
+ausencias ou `last_seen_at`; apenas registra `DiscoveryHit` e revisao de
+conteudo quando houver mudanca observada.
+
 Quando uma publicacao conhecida muda:
 
 - cria `PostingRevision`;
@@ -97,4 +103,5 @@ fechados para avaliar se aumenta o conjunto de vagas uteis ou apenas repete
 oportunidades ja conhecidas.
 
 Consultas de descoberta tambem medem `DiscoveryHit`, vagas unicas, duplicacao
-entre consultas e consultas sem resultado.
+entre consultas, consultas sem resultado e conflitos de ciclo de vida
+(`lifecycle_conflict`).

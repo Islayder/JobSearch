@@ -24,6 +24,10 @@ O fingerprint e deterministico e muda quando parametros relevantes mudam. O
 `collection_scope_key` permanece estavel por key para impedir que uma mudanca
 de filtro feche vagas antigas.
 
+Consultas sao donas apenas das proprias observacoes. Se encontrarem uma vaga que
+ja pertence a um board autoritativo, elas nao assumem propriedade da publicacao
+nem alteram o ciclo de vida autoritativo.
+
 ## Autoridade
 
 Consultas usam `DISCOVERY_QUERY`. Elas nunca:
@@ -36,13 +40,17 @@ Consultas usam `DISCOVERY_QUERY`. Elas nunca:
 Uma consulta vazia, parcial, truncada, com falha ou com pagina repetida continua
 sem autoridade de fechamento.
 
+Quando a consulta encontra publicacao fechada ou inativa, o `DiscoveryHit` pode
+ser marcado como `lifecycle_conflict`. Isso informa que a vaga foi vista pela
+descoberta, mas nao autoriza reabertura.
+
 ## CLI
 
 ```powershell
 radar queries
 radar show-query gupy-estagio-dados
 radar collect-query gupy-estagio-dados --dry-run --max-pages 1 --max-items 5
-radar collect-search-plan --collector gupy --tag data --dry-run
+radar collect-search-plan --collector gupy --tag data --dry-run --max-total-requests 8
 radar query-health
 ```
 
@@ -54,3 +62,11 @@ Dry-run nao grava `Source`, `SourceRun`, `SearchQuery`, `DiscoveryHit`,
 `DiscoveryHit` registra que uma consulta encontrou uma publicacao em uma
 execucao. Ele guarda query, run, posting, job, identidade da plataforma, pagina,
 posicao e metadados resumidos. Metadados nao devem conter descricoes completas.
+
+## Piloto Persistente
+
+Um piloto persistente deve ser executado somente depois dos testes offline e com
+limites pequenos. Antes da execucao, faca backup do banco local ignorado pelo
+Git, rode um dry-run equivalente, confirme que nao ha candidatura automatica e
+entao persista a coleta. Reexecutar o mesmo plano deve ser idempotente para
+publicacoes: novas duplicatas de `provider_identity_key` nao podem aparecer.

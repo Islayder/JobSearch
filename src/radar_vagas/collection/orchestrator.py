@@ -54,6 +54,10 @@ from radar_vagas.persistence.models import (
     Source,
     SourceRun,
 )
+from radar_vagas.relevance.service import (
+    build_role_relevance_input_from_posting,
+    normalize_technologies,
+)
 
 
 def build_collection_context(
@@ -273,6 +277,15 @@ def _persist_result_items(
         existing = _find_existing_posting(session, source, analysis)
         if existing is not None:
             seen_posting_ids.add(existing.id)
+            if _is_observation_only(context, existing, collection_scope_key):
+                if existing.content_hash == analysis.content_hash:
+                    counters["unchanged"] += 1
+                    continue
+                _record_revision(session, existing, analysis, run)
+                _update_observed_posting_content(session, settings, existing, analysis)
+                counters["changed"] += 1
+                continue
+
             posting_scope_key = _scope_key_for_existing(context, existing, collection_scope_key)
             if existing.content_hash == analysis.content_hash:
                 if not existing.is_active:
@@ -370,6 +383,18 @@ def _scope_key_for_existing(
     return collection_scope_key
 
 
+def _is_observation_only(
+    context: CollectionContext,
+    posting: Posting,
+    collection_scope_key: str,
+) -> bool:
+    return (
+        context.authority is CollectionAuthority.DISCOVERY_QUERY
+        and posting.collection_scope_key is not None
+        and posting.collection_scope_key != collection_scope_key
+    )
+
+
 def _close_job_if_no_active_posting(session: Session, job: Job | None) -> None:
     if job is None:
         return
@@ -443,6 +468,40 @@ def _mark_posting_seen(
         evaluate_job_record(session, posting.job, settings)
 
 
+def _update_observed_posting_content(
+    session: Session,
+    settings: Settings,
+    posting: Posting,
+    analysis: ItemAnalysis,
+) -> None:
+    item = analysis.posting
+    relevance_input = build_role_relevance_input_from_posting(item)
+    posting.provider = posting.provider or item.provider
+    posting.provider_scope = posting.provider_scope or item.provider_scope
+    posting.provider_external_id = posting.provider_external_id or item.provider_external_id
+    if posting.provider_identity_key is None:
+        posting.provider_identity_key = item.provider_identity_key
+    posting.external_id = item.external_id or posting.external_id
+    posting.original_url = item.url or item.application_url or posting.original_url
+    posting.normalized_url = analysis.normalized_url
+    posting.raw_title = item.title
+    posting.raw_company = item.company
+    posting.raw_location = item.location or _location_from_item(item)
+    posting.raw_description = item.description or ""
+    posting.raw_department = relevance_input.department
+    posting.raw_area = relevance_input.area
+    posting.raw_requirements = relevance_input.requirements
+    posting.raw_responsibilities = relevance_input.responsibilities
+    posting.raw_technologies_json = _technologies_json(relevance_input.technologies)
+    posting.published_at = item.published_at
+    posting.content_hash = analysis.content_hash
+
+    if posting.job is None or not _may_refresh_job(session, posting.job):
+        return
+    _refresh_job_content_from_item(posting.job, item)
+    evaluate_job_record(session, posting.job, settings)
+
+
 def _record_revision(
     session: Session,
     posting: Posting,
@@ -472,12 +531,14 @@ def _update_existing_posting(
     collection_scope_key: str,
 ) -> None:
     item = analysis.posting
+    relevance_input = build_role_relevance_input_from_posting(item)
     posting.source_run_id = run.id
     posting.collection_scope_key = collection_scope_key
     posting.provider = item.provider or posting.provider
     posting.provider_scope = item.provider_scope or posting.provider_scope
     posting.provider_external_id = item.provider_external_id or posting.provider_external_id
-    posting.provider_identity_key = item.provider_identity_key or posting.provider_identity_key
+    if posting.provider_identity_key is None:
+        posting.provider_identity_key = item.provider_identity_key
     posting.external_id = item.external_id
     posting.original_url = item.url or item.application_url or posting.original_url
     posting.normalized_url = analysis.normalized_url
@@ -485,6 +546,11 @@ def _update_existing_posting(
     posting.raw_company = item.company
     posting.raw_location = item.location or _location_from_item(item)
     posting.raw_description = item.description or ""
+    posting.raw_department = relevance_input.department
+    posting.raw_area = relevance_input.area
+    posting.raw_requirements = relevance_input.requirements
+    posting.raw_responsibilities = relevance_input.responsibilities
+    posting.raw_technologies_json = _technologies_json(relevance_input.technologies)
     posting.published_at = item.published_at
     posting.last_seen_at = utc_now()
     posting.content_hash = analysis.content_hash
@@ -497,9 +563,23 @@ def _update_existing_posting(
     if posting.job is None or not _may_refresh_job(session, posting.job):
         return
     job = posting.job
+    _refresh_job_content_from_item(job, item)
+    if job.status is JobStatus.CLOSED:
+        job.status = JobStatus.NEW
+    job.updated_at = utc_now()
+    evaluate_job_record(session, job, settings)
+
+
+def _refresh_job_content_from_item(job: Job, item: ImportedPosting) -> None:
+    relevance_input = build_role_relevance_input_from_posting(item)
     job.canonical_title = item.title
     job.normalized_title = normalize_title(item.title)
     job.description = item.description_with_benefits()
+    job.department = relevance_input.department
+    job.area = relevance_input.area
+    job.requirements = relevance_input.requirements
+    job.responsibilities = relevance_input.responsibilities
+    job.technologies_json = _technologies_json(relevance_input.technologies)
     job.employment_type = item.employment_type
     job.work_model = item.work_model
     job.country = item.country
@@ -515,10 +595,6 @@ def _update_existing_posting(
     job.application_url = item.application_url or item.url
     job.published_at = item.published_at
     job.expires_at = item.expires_at
-    if job.status is JobStatus.CLOSED:
-        job.status = JobStatus.NEW
-    job.updated_at = utc_now()
-    evaluate_job_record(session, job, settings)
 
 
 def _may_refresh_job(session: Session, job: Job) -> bool:
@@ -537,11 +613,42 @@ def _changed_fields(
     item: ImportedPosting,
     new_content_hash: str,
 ) -> dict[str, Any]:
+    relevance_input = build_role_relevance_input_from_posting(item)
     comparisons: dict[str, tuple[Any, Any]] = {
         "title": (posting.raw_title, item.title),
         "company": (posting.raw_company, item.company),
         "location": (posting.raw_location, item.location or _location_from_item(item)),
-        "description": (posting.raw_description, item.description or ""),
+        "description": (
+            _safe_text_change(posting.raw_description),
+            _safe_text_change(item.description or ""),
+        ),
+        "department": (posting.raw_department, relevance_input.department),
+        "area": (posting.raw_area, relevance_input.area),
+        "requirements": (
+            _safe_text_change(posting.raw_requirements),
+            _safe_text_change(relevance_input.requirements),
+        ),
+        "responsibilities": (
+            _safe_text_change(posting.raw_responsibilities),
+            _safe_text_change(relevance_input.responsibilities),
+        ),
+        "technologies": (
+            _technologies_list(posting.raw_technologies_json),
+            list(normalize_technologies(relevance_input.technologies)),
+        ),
+        "work_model": (
+            posting.job.work_model.value if posting.job else None,
+            item.work_model.value,
+        ),
+        "employment_type": (
+            posting.job.employment_type.value if posting.job else None,
+            item.employment_type.value,
+        ),
+        "expires_at": (
+            posting.job.expires_at.isoformat() if posting.job and posting.job.expires_at else None,
+            item.expires_at.isoformat() if item.expires_at else None,
+        ),
+        "provider_identity_key": (posting.provider_identity_key, item.provider_identity_key),
         "published_at": (
             posting.published_at.isoformat() if posting.published_at else None,
             item.published_at.isoformat() if item.published_at else None,
@@ -552,6 +659,15 @@ def _changed_fields(
         field: short_metadata_change(old, new)
         for field, (old, new) in comparisons.items()
         if old != new
+    }
+
+
+def _safe_text_change(value: str | None) -> dict[str, object] | None:
+    if value is None:
+        return None
+    return {
+        "length": len(value),
+        "sha256": sha256(value.encode("utf-8")).hexdigest(),
     }
 
 
@@ -894,9 +1010,11 @@ def _metadata_int(value: object) -> int | None:
 def _hit_match_status(posting: Posting | None, run: SourceRun) -> str:
     if posting is None:
         return "unmatched"
+    if not posting.is_active or posting.status is PostingStatus.CLOSED:
+        return "lifecycle_conflict"
     if _aware_datetime(posting.first_seen_at) >= _aware_datetime(run.started_at):
         return "new"
-    if posting.source_run_id == run.id and posting.revisions:
+    if posting.revisions:
         latest_revision = max(posting.revisions, key=lambda revision: revision.observed_at)
         if latest_revision.source_run_id == run.id:
             return "changed"
@@ -1093,3 +1211,21 @@ def _url_digest(url: str) -> str:
 def _location_from_item(item: ImportedPosting) -> str:
     parts = [part for part in [item.city, item.state, item.country] if part]
     return ", ".join(parts) if parts else ""
+
+
+def _technologies_json(value: object) -> str:
+    return json.dumps(
+        list(normalize_technologies(value)),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _technologies_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return list(normalize_technologies(decoded))

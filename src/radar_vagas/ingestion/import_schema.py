@@ -25,6 +25,11 @@ class ImportedPosting(BaseModel):
     company: str
     location: str | None = None
     description: str | None = None
+    department: str | None = None
+    area: str | None = None
+    requirements: str | None = None
+    responsibilities: str | None = None
+    technologies: list[str] = Field(default_factory=list)
     published_at: datetime | None = None
     expires_at: datetime | None = None
     employment_type: EmploymentType = EmploymentType.UNKNOWN
@@ -60,6 +65,10 @@ class ImportedPosting(BaseModel):
         "source_type",
         "location",
         "description",
+        "department",
+        "area",
+        "requirements",
+        "responsibilities",
         "expires_at",
         "country",
         "state",
@@ -111,6 +120,28 @@ class ImportedPosting(BaseModel):
                 decoded = json.loads(stripped)
                 if not isinstance(decoded, list):
                     raise ValueError("benefits em JSON deve ser uma lista")
+                return [str(item).strip() for item in decoded if str(item).strip()]
+            separator = "|" if "|" in stripped else ";"
+            return [part.strip() for part in stripped.split(separator) if part.strip()]
+        return [str(value)]
+
+    @field_validator("technologies", mode="before")
+    @classmethod
+    def parse_technologies(cls, value: object) -> list[str]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                import json
+
+                decoded = json.loads(stripped)
+                if not isinstance(decoded, list):
+                    raise ValueError("technologies em JSON deve ser uma lista")
                 return [str(item).strip() for item in decoded if str(item).strip()]
             separator = "|" if "|" in stripped else ";"
             return [part.strip() for part in stripped.split(separator) if part.strip()]

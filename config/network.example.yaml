@@ -16,4 +16,10 @@ collection:
   default_max_items: 500
   max_parallel_requests: 3
   close_after_missing_successful_runs: 2
+  minimum_interval_between_requests_seconds: 1
   minimum_interval_between_board_requests_seconds: 1
+
+search_plan:
+  max_total_requests: 40
+  max_total_items: 1000
+  max_duration_seconds: 900

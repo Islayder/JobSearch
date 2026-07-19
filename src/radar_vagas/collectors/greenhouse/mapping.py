@@ -26,6 +26,7 @@ def map_greenhouse_job(
     location_name = _location_name(job.get("location"))
     metadata_values = _metadata_values(job.get("metadata"))
     metadata_blob = metadata_text(metadata_values)
+    departments = _names(job.get("departments"))
     location_info = parse_location_text(location_name)
     employment_type = infer_employment_type(title, metadata_blob)
     work_model = infer_work_model(location_name, title, metadata_blob)
@@ -47,6 +48,9 @@ def map_greenhouse_job(
         company=company_name,
         location=location_info["location"],
         description=description,
+        department=", ".join(departments) or None,
+        area=", ".join(_names(job.get("offices"))) or None,
+        technologies=_metadata_list_values(metadata_values, names={"skills", "tecnologias"}),
         published_at=job.get("updated_at"),
         employment_type=employment_type,
         work_model=_work_model_from_info(location_info),
@@ -57,7 +61,7 @@ def map_greenhouse_job(
         application_url=public_url,
         metadata={
             "board_token": board_token,
-            "departments": _names(job.get("departments")),
+            "departments": departments,
             "offices": _names(job.get("offices")),
             "raw_metadata": metadata_values,
             "greenhouse_updated_at": job.get("updated_at"),
@@ -92,6 +96,17 @@ def _metadata_values(value: Any) -> list[dict[str, str]]:
         text_value = as_text(raw_value)
         if name or text_value:
             result.append({"name": name, "value": text_value or ""})
+    return result
+
+
+def _metadata_list_values(values: list[dict[str, str]], *, names: set[str]) -> list[str]:
+    result: list[str] = []
+    normalized_names = {name.lower() for name in names}
+    for item in values:
+        if item.get("name", "").lower() not in normalized_names:
+            continue
+        value = item.get("value", "")
+        result.extend(part.strip() for part in value.replace(";", ",").split(",") if part.strip())
     return result
 
 

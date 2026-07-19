@@ -49,6 +49,11 @@ def map_lever_posting(
         company=company_name,
         location=location_info["location"],
         description=description,
+        department=categories.get("department") if isinstance(categories, dict) else None,
+        area=categories.get("team") if isinstance(categories, dict) else None,
+        requirements=_lever_list_text(posting, "requirements"),
+        responsibilities=_lever_list_text(posting, "responsibilities"),
+        technologies=_lever_list_text(posting, "technologies").splitlines(),
         published_at=parse_epoch_millis(posting.get("createdAt")),
         employment_type=infer_employment_type(commitment, title),
         work_model=_work_model_from_info(location_info),
@@ -91,6 +96,23 @@ def _description(posting: dict[str, Any]) -> str:
     additional = html_to_text(as_text(posting.get("additional")))
     if additional:
         parts.append(additional)
+    return join_unique(parts)
+
+
+def _lever_list_text(posting: dict[str, Any], marker: str) -> str:
+    lists = posting.get("lists")
+    if not isinstance(lists, list):
+        return ""
+    parts: list[str] = []
+    for item in lists:
+        if not isinstance(item, dict):
+            continue
+        heading = (as_text(item.get("text")) or "").lower()
+        if marker not in heading:
+            continue
+        content = html_to_text(as_text(item.get("content")))
+        if content:
+            parts.append(content)
     return join_unique(parts)
 
 

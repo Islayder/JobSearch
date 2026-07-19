@@ -55,6 +55,38 @@ def test_collection_scope_migration_downgrades_to_0003_and_upgrades_again(
     assert "collection_scope_key" in board_columns
 
 
+def test_relevance_consistency_migration_adds_structured_fields_and_downgrades(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    config = alembic_config(settings)
+
+    command.upgrade(config, "0005_search_queries_and_gupy")
+    command.upgrade(config, "head")
+    engine = create_engine(settings.database_url, future=True)
+    try:
+        inspector = inspect(engine)
+        posting_columns = {column["name"] for column in inspector.get_columns("postings")}
+        job_columns = {column["name"] for column in inspector.get_columns("jobs")}
+    finally:
+        engine.dispose()
+    assert "raw_department" in posting_columns
+    assert "raw_technologies_json" in posting_columns
+    assert "department" in job_columns
+    assert "technologies_json" in job_columns
+
+    command.downgrade(config, "0005_search_queries_and_gupy")
+    engine = create_engine(settings.database_url, future=True)
+    try:
+        inspector = inspect(engine)
+        posting_columns = {column["name"] for column in inspector.get_columns("postings")}
+        job_columns = {column["name"] for column in inspector.get_columns("jobs")}
+    finally:
+        engine.dispose()
+    assert "raw_department" not in posting_columns
+    assert "technologies_json" not in job_columns
+
+
 def test_collection_scope_migration_backfills_existing_0003_rows(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     config = alembic_config(settings)

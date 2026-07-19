@@ -42,8 +42,10 @@ radar boards
 radar source-health
 radar queries
 radar collect-query gupy-estagio-dados --dry-run
+radar collect-search-plan --collector gupy --tag data --dry-run
 radar query-health
 radar evaluate-all
+radar reevaluate-jobs --dry-run
 radar list-jobs
 radar stats
 radar doctor
@@ -75,12 +77,17 @@ mypy src
 - Coletores publicos so podem usar GET/HEAD.
 - Nao implemente POST, candidatura, login, cookies de sessao, CAPTCHA, proxy, rotacao de user-agent ou Playwright.
 - Toda coleta persistida deve registrar `SourceRun`.
+- A relevancia deve ser calculada pelo builder canonico em `radar_vagas.relevance.service`, tanto em dry-run quanto em persistencia.
+- Quando disponiveis, preserve campos estruturados de departamento, area, requisitos, responsabilidades e tecnologias para relevancia reproduzivel.
 - Identidade incremental de board deve usar escopo estavel de coletor e key/token/URL, nunca somente nome de empresa.
 - Consultas de descoberta devem usar `CollectionAuthority.DISCOVERY_QUERY`; elas nunca incrementam `missing_count` e nunca fecham publicacoes ou vagas por ausencia.
+- Consultas de descoberta que encontrem vaga pertencente a outro escopo autoritativo devem registrar observacao e `DiscoveryHit`, sem transferir propriedade nem alterar ciclo de vida autoritativo.
 - Board autoritativo so pode fechar por ausencia em snapshot completo, bem-sucedido, nao parcial, nao truncado e sem itens invalidos que comprometam completude.
 - Quando conhecida, a identidade de plataforma deve preencher `Posting.provider_identity_key`: `gupy:<job_id>`, `greenhouse:<board_token>:<job_id>`, `lever:<board_token>:<posting_id>` ou `jobposting:<normalized_url>`.
 - `config/search_queries.local.yaml` e override local ignorado pelo Git e nao deve ser versionado.
 - Snapshot parcial ou truncado nunca deve incrementar ausencia nem fechar publicacao.
+- Planos de busca devem respeitar o orcamento global em `network.search_plan` e o intervalo minimo por host em `minimum_interval_between_requests_seconds`.
+- `minimum_interval_between_board_requests_seconds` existe apenas como alias legado de configuracao.
 - `last_seen_at` representa a ultima execucao em que a publicacao apareceu; ausencia nao atualiza esse campo.
 - Reaparecimento deve reabrir publicacao, zerar ausencias e reavaliar a vaga quando ela nao estiver protegida por candidatura ou descarte humano.
 - Ao alterar coleta incremental, teste idempotencia, revisoes, ausencia, fechamento, reabertura e falha sem fechamento.

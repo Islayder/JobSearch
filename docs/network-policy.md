@@ -18,6 +18,7 @@ Todo coletor deve usar `radar_vagas.http.client.HttpClient`. O cliente aplica:
 - retry conservador para GET idempotente;
 - headers de cache.
 - allowlist opcional de hosts por coletor, aplicada tambem a redirects.
+- intervalo minimo por host usando relogio monotonic.
 
 ## SSRF
 
@@ -58,10 +59,25 @@ Padroes em `config/network.yaml`:
 - max response bytes: 5 MB;
 - max retries: 2;
 - backoff: 0.5 segundo.
+- minimum interval between requests: 1 segundo por host;
+- search plan max total requests: 40;
+- search plan max total items: 1000;
+- search plan max duration: 900 segundos.
 
 Retry automatico ocorre somente para GET em timeout, erro de conexao, 429, 502,
 503 e 504. `Retry-After` e respeitado quando valido. Testes injetam espera falsa
 e nao aguardam delays reais.
+
+`minimum_interval_between_board_requests_seconds` e aceito apenas como alias
+legado de `minimum_interval_between_requests_seconds`.
+
+## Orcamento de Planos
+
+`collect-search-plan` compartilha um unico orcamento entre todas as consultas do
+plano. A execucao para quando atinge qualquer limite configurado ou informado na
+CLI: total de requisicoes, total de itens ou duracao maxima. Quando isso ocorre,
+o relatorio marca a execucao como parcial/truncada e informa o limite que
+interrompeu o plano.
 
 ## Tipos de Conteudo
 
@@ -97,8 +113,9 @@ candidatura.
 
 ## Baixa Concorrencia
 
-`network.yaml` define `max_parallel_requests` e intervalo minimo por board. A CLI
-executa de forma conservadora e nao tenta contornar bloqueios.
+`network.yaml` define `max_parallel_requests`, intervalo minimo por host e
+orcamento de planos de busca. A CLI executa de forma conservadora e nao tenta
+contornar bloqueios.
 
 ## Proibicoes
 

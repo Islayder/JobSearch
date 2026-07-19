@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -67,6 +68,8 @@ class HttpClient:
         resolver: DNSResolver | None = None,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        monotonic: Callable[[], float] = time.monotonic,
+        minimum_interval_between_requests_seconds: float = 0,
     ) -> None:
         self.config = config or HttpConfig()
         self.policy = UrlPolicy(
@@ -74,6 +77,11 @@ class HttpClient:
             resolver=resolver or SystemDNSResolver(),
         )
         self._sleep = sleep
+        self._rate_limiter = HostRateLimiter(
+            minimum_interval_seconds=minimum_interval_between_requests_seconds,
+            monotonic=monotonic,
+            sleep=sleep,
+        )
         timeout = httpx.Timeout(
             connect=self.config.connect_timeout_seconds,
             read=self.config.read_timeout_seconds,
@@ -132,6 +140,7 @@ class HttpClient:
                 try:
                     current_url = self.policy.validate_url(current_url)
                     _validate_allowed_host(current_url, allowed_hosts)
+                    self._rate_limiter.wait(current_url)
                     requests_made += 1
                     response = self._send_once(method, current_url, headers=headers)
                 except httpx.TimeoutException as exc:
@@ -254,6 +263,42 @@ def cache_request_headers(etag: str | None, last_modified: str | None) -> dict[s
     if last_modified:
         headers["If-Modified-Since"] = last_modified
     return headers
+
+
+class HostRateLimiter:
+    def __init__(
+        self,
+        *,
+        minimum_interval_seconds: float,
+        monotonic: Callable[[], float],
+        sleep: Callable[[float], None],
+    ) -> None:
+        if minimum_interval_seconds < 0:
+            raise ValueError("minimum_interval_seconds nao pode ser negativo.")
+        self.minimum_interval_seconds = minimum_interval_seconds
+        self._monotonic = monotonic
+        self._sleep = sleep
+        self._lock = threading.Lock()
+        self._last_request_at_by_host: dict[str, float] = {}
+
+    def wait(self, url: str) -> None:
+        if self.minimum_interval_seconds <= 0:
+            return
+        host = (urlsplit(url).hostname or "").strip(".").lower()
+        if not host:
+            return
+        with self._lock:
+            now = self._monotonic()
+            previous = self._last_request_at_by_host.get(host)
+            wait_seconds = (
+                max(0.0, self.minimum_interval_seconds - (now - previous))
+                if previous is not None
+                else 0.0
+            )
+            if wait_seconds > 0:
+                self._sleep(wait_seconds)
+                now = self._monotonic()
+            self._last_request_at_by_host[host] = now
 
 
 def safe_request_log_payload(

@@ -24,7 +24,9 @@ arquivos JSON/CSV.
 4. O orquestrador cria `SourceRun`, detecta duplicatas por identidade de
    plataforma quando disponivel, atualiza itens conhecidos, cria revisoes e
    aplica fechamento incremental somente quando a autoridade permite.
-5. O relatorio de coleta resume rede, encontrados, novos, conhecidos, alterados,
+5. A relevancia e calculada a partir da entrada canonica compartilhada por
+   dry-run e persistencia, incluindo campos estruturados quando presentes.
+6. O relatorio de coleta resume rede, encontrados, novos, conhecidos, alterados,
    duplicados, invalidos, elegibilidade e fechamentos.
 
 ## Snapshots Completos e Parciais
@@ -49,6 +51,9 @@ HTTP 304 tambem nao incrementa ausencias, porque nada foi reprocessado.
 - JobPosting individual usa `SINGLE_PAGE`.
 
 O orquestrador exige essa politica; `complete_snapshot` sozinho nao basta.
+Consultas observacionais nao transferem propriedade de publicacao pertencente a
+board autoritativo; elas apenas registram a ocorrencia e eventuais mudancas de
+conteudo.
 
 ## JobPosting
 
@@ -110,6 +115,8 @@ O coletor chama somente `GET` em
 `offset`. Nao usa `https://api.gupy.io/api/v1/jobs`, Bearer token, login,
 cookies autenticados, POST, candidatura, CAPTCHA, proxy ou Playwright. A
 consulta e `DISCOVERY_QUERY` e nunca fecha vagas por ausencia.
+`collect-search-plan` reutiliza o cliente HTTP central e respeita o intervalo
+minimo por host e o orcamento global de requisicoes, itens e duracao.
 
 ## Adicionar Coletor Futuro
 
@@ -118,7 +125,8 @@ consulta e `DISCOVERY_QUERY` e nunca fecha vagas por ausencia.
 3. Retorne `CollectionResult` com `ImportedPosting`.
 4. Registre o coletor em `collectors/registry.py`.
 5. Adicione fixtures offline e testes de mapping, erro, dry-run e incremental.
-6. Documente limites e campos mapeados.
+6. Garanta paridade entre analise de relevancia em dry-run e decisao persistida.
+7. Documente limites e campos mapeados.
 
 ## Limitacoes
 

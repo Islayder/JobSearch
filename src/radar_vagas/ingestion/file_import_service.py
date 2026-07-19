@@ -50,7 +50,11 @@ from radar_vagas.persistence.models import (
     Source,
     SourceRun,
 )
-from radar_vagas.relevance.service import RoleRelevanceInput, evaluate_role_relevance
+from radar_vagas.relevance.service import (
+    build_role_relevance_input_from_posting,
+    evaluate_role_relevance,
+    normalize_technologies,
+)
 
 
 @dataclass(frozen=True)
@@ -308,12 +312,7 @@ def _analyze_items(
             blocked_reasons,
         )
         relevance = evaluate_role_relevance(
-            RoleRelevanceInput(
-                title=posting.title,
-                department=as_text_from_metadata(posting.metadata.get("department")),
-                description=posting.description_with_benefits(),
-                technologies=_technologies_from_metadata(posting.metadata),
-            ),
+            build_role_relevance_input_from_posting(posting),
             relevance_rules,
         )
         eligibility = _apply_relevance_to_eligibility(eligibility, relevance.status)
@@ -608,11 +607,17 @@ def _get_or_create_job(
     duplicate_kind = DuplicateKind.DISTINCT
     if analysis.duplicate_kind is DuplicateKind.PROBABLE:
         duplicate_kind = DuplicateKind.PROBABLE
+    relevance_input = build_role_relevance_input_from_posting(analysis.posting)
     job = Job(
         company_id=company.id,
         canonical_title=analysis.posting.title,
         normalized_title=normalize_title(analysis.posting.title),
         description=analysis.posting.description_with_benefits(),
+        department=relevance_input.department,
+        area=relevance_input.area,
+        requirements=relevance_input.requirements,
+        responsibilities=relevance_input.responsibilities,
+        technologies_json=_technologies_json(relevance_input.technologies),
         employment_type=analysis.posting.employment_type,
         seniority=None,
         work_model=analysis.posting.work_model,
@@ -648,6 +653,7 @@ def _create_posting(
     analysis: ItemAnalysis,
 ) -> Posting:
     original_url = _effective_original_url(analysis)
+    relevance_input = build_role_relevance_input_from_posting(analysis.posting)
     posting = Posting(
         source_id=source.id,
         source_run_id=run.id,
@@ -662,6 +668,11 @@ def _create_posting(
         raw_company=analysis.posting.company,
         raw_location=analysis.posting.location or _location_from_fields(analysis.posting),
         raw_description=analysis.posting.description or "",
+        raw_department=relevance_input.department,
+        raw_area=relevance_input.area,
+        raw_requirements=relevance_input.requirements,
+        raw_responsibilities=relevance_input.responsibilities,
+        raw_technologies_json=_technologies_json(relevance_input.technologies),
         published_at=analysis.posting.published_at,
         first_seen_at=utc_now(),
         last_seen_at=utc_now(),
@@ -774,15 +785,23 @@ def _effective_normalized_url(
 
 def _content_hash(posting: ImportedPosting, normalized_url: str) -> str:
     url_component = normalized_url if posting.url or posting.application_url else ""
+    relevance_input = build_role_relevance_input_from_posting(posting)
     return generate_content_hash(
         [
-            slugify_source_name(posting.source_name),
             posting.external_id,
             url_component,
             posting.title,
             posting.company,
             posting.location,
             posting.description_with_benefits(),
+            relevance_input.department,
+            relevance_input.area,
+            relevance_input.requirements,
+            relevance_input.responsibilities,
+            _technologies_json(relevance_input.technologies),
+            posting.employment_type.value,
+            posting.work_model.value,
+            posting.expires_at.isoformat() if posting.expires_at else None,
         ]
     )
 
@@ -808,3 +827,11 @@ def _location_from_fields(posting: ImportedPosting) -> str:
 
 def _file_hash(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
+
+
+def _technologies_json(value: object) -> str:
+    return json.dumps(
+        list(normalize_technologies(value)),
+        ensure_ascii=False,
+        sort_keys=True,
+    )

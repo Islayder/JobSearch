@@ -171,12 +171,37 @@ class CollectionConfig(BaseModel):
     default_max_items: int = Field(default=500, ge=1, le=10_000)
     max_parallel_requests: int = Field(default=3, ge=1, le=10)
     close_after_missing_successful_runs: int = Field(default=2, ge=1, le=10)
-    minimum_interval_between_board_requests_seconds: float = Field(default=1, ge=0)
+    minimum_interval_between_requests_seconds: float = Field(default=1, ge=0)
+    minimum_interval_between_board_requests_seconds: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_minimum_interval_alias(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        if (
+            "minimum_interval_between_requests_seconds" not in data
+            and "minimum_interval_between_board_requests_seconds" in data
+        ):
+            data = {
+                **data,
+                "minimum_interval_between_requests_seconds": data[
+                    "minimum_interval_between_board_requests_seconds"
+                ],
+            }
+        return data
+
+
+class SearchPlanConfig(BaseModel):
+    max_total_requests: int = Field(default=40, ge=1)
+    max_total_items: int = Field(default=1_000, ge=1)
+    max_duration_seconds: int = Field(default=900, ge=1)
 
 
 class NetworkConfig(BaseModel):
     http: HttpConfig = Field(default_factory=HttpConfig)
     collection: CollectionConfig = Field(default_factory=CollectionConfig)
+    search_plan: SearchPlanConfig = Field(default_factory=SearchPlanConfig)
 
 
 class BoardConfig(BaseModel):
@@ -357,7 +382,7 @@ class RelevanceThresholdsConfig(BaseModel):
 
 
 class RelevanceRulesConfig(BaseModel):
-    version: str = "2026-07-19"
+    version: str = "2026-07-19.1"
     core_terms: list[str] = Field(
         default_factory=lambda: [
             "analise de dados",
@@ -386,30 +411,55 @@ class RelevanceRulesConfig(BaseModel):
             "produto de tecnologia",
         ]
     )
-    adjacent_terms: list[str] = Field(
+    strong_adjacent_terms: list[str] = Field(
         default_factory=lambda: [
             "credito",
             "risco",
             "riscos",
             "fraude",
             "pricing",
-            "planejamento",
-            "financas",
             "crm",
             "marketing analytics",
             "performance",
             "people analytics",
-            "operacoes orientadas a dados",
+        ]
+    )
+    contextual_adjacent_terms: list[str] = Field(
+        default_factory=lambda: [
             "operacoes",
-            "logistica analitica",
-            "auditoria com dados",
             "processos",
+            "planejamento",
+            "financas",
             "produto",
+            "logistica",
+            "auditoria",
             "indicadores",
             "relatorios",
             "automacao de processos",
         ]
     )
+    supporting_context_terms: list[str] = Field(
+        default_factory=lambda: [
+            "analise",
+            "dados",
+            "indicadores",
+            "metricas",
+            "dashboard",
+            "dashboards",
+            "power bi",
+            "sql",
+            "python",
+            "automacao",
+            "bi",
+            "analytics",
+            "sistemas",
+            "relatorios analiticos",
+            "performance quantitativa",
+            "segmentacao",
+            "campanhas",
+        ]
+    )
+    adjacent_terms: list[str] = Field(default_factory=list)
     technology_terms: list[str] = Field(
         default_factory=lambda: [
             "sql",
@@ -430,12 +480,18 @@ class RelevanceRulesConfig(BaseModel):
             "cadastro de dados",
             "operador de caixa",
             "auxiliar administrativo",
+            "estagio administrativo",
             "recepcao",
             "vendas",
+            "contas a pagar",
             "atendimento ao cliente",
             "telemarketing",
             "estoque",
             "logistica operacional",
+            "apoio operacional",
+            "tarefas administrativas",
+            "excel basico",
+            "crm operacional",
         ]
     )
     weights: RelevanceWeightsConfig = Field(default_factory=RelevanceWeightsConfig)
@@ -450,13 +506,26 @@ class RelevanceRulesConfig(BaseModel):
     )
 
     @field_validator(
-        "core_terms", "adjacent_terms", "technology_terms", "negative_terms", mode="before"
+        "core_terms",
+        "strong_adjacent_terms",
+        "contextual_adjacent_terms",
+        "supporting_context_terms",
+        "adjacent_terms",
+        "technology_terms",
+        "negative_terms",
+        mode="before",
     )
     @classmethod
     def require_term_list(cls, value: object) -> object:
         if not isinstance(value, list):
             raise ValueError("lista de termos esperada")
         return value
+
+    @model_validator(mode="after")
+    def merge_legacy_adjacent_terms(self) -> "RelevanceRulesConfig":
+        if self.adjacent_terms and not self.strong_adjacent_terms:
+            self.strong_adjacent_terms = self.adjacent_terms
+        return self
 
 
 def _raise_if_contains_secret(value: Any, *, path: str = "config") -> None:

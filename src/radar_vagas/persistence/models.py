@@ -220,6 +220,11 @@ class Posting(Base):
     raw_company: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_location: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_description: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_department: Mapped[str | None] = mapped_column(String(500))
+    raw_area: Mapped[str | None] = mapped_column(String(500))
+    raw_requirements: Mapped[str | None] = mapped_column(Text)
+    raw_responsibilities: Mapped[str | None] = mapped_column(Text)
+    raw_technologies_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
@@ -276,6 +281,11 @@ class Job(Base):
     canonical_title: Mapped[str] = mapped_column(String(500), nullable=False)
     normalized_title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    department: Mapped[str | None] = mapped_column(String(500))
+    area: Mapped[str | None] = mapped_column(String(500))
+    requirements: Mapped[str | None] = mapped_column(Text)
+    responsibilities: Mapped[str | None] = mapped_column(Text)
+    technologies_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     employment_type: Mapped[EmploymentType] = mapped_column(
         enum_type(EmploymentType), default=EmploymentType.UNKNOWN, nullable=False
     )

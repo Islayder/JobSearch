@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -38,20 +39,23 @@ from radar_vagas.config.loaders import (
     load_relevance_rules,
     load_search_queries,
 )
-from radar_vagas.config.schemas import BoardConfig, SearchQueryConfig
+from radar_vagas.config.schemas import BoardConfig, NetworkConfig, SearchQueryConfig
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
     CollectionAuthority,
     EligibilityStatus,
     EmploymentType,
     JobStatus,
+    RelevanceStatus,
     WorkModel,
     parse_enum_value,
 )
 from radar_vagas.domain.errors import RadarError
 from radar_vagas.eligibility.workflow import (
+    ReevaluateJobsSummary,
     evaluate_all_jobs,
     evaluate_job_by_id,
+    reevaluate_jobs,
 )
 from radar_vagas.http.client import HttpClient
 from radar_vagas.ingestion.file_import_service import (
@@ -73,8 +77,10 @@ from radar_vagas.persistence.models import (
     Job,
     Posting,
     SearchQuery,
+    Source,
     SourceRun,
 )
+from radar_vagas.relevance.service import technologies_from_json
 
 console = Console()
 app = typer.Typer(
@@ -93,6 +99,85 @@ class CliState:
 class ResolvedBoard:
     config: BoardConfig
     persist: bool
+
+
+@dataclass(frozen=True)
+class SearchPlanBudget:
+    max_total_requests: int
+    max_total_items: int
+    max_duration_seconds: int
+
+
+@dataclass
+class _SearchPlanBudgetState:
+    budget: SearchPlanBudget
+    started_at: float = 0.0
+    requests_used: int = 0
+    items_used: int = 0
+    exhausted_by: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.started_at == 0.0:
+            self.started_at = time.monotonic()
+
+    @property
+    def exhausted(self) -> bool:
+        return self.exhausted_by is not None
+
+    def should_stop_before_query(self) -> bool:
+        if self.requests_used >= self.budget.max_total_requests:
+            self.exhausted_by = "max_total_requests"
+            return True
+        if self.items_used >= self.budget.max_total_items:
+            self.exhausted_by = "max_total_items"
+            return True
+        if self.elapsed_seconds >= self.budget.max_duration_seconds:
+            self.exhausted_by = "max_duration_seconds"
+            return True
+        return False
+
+    @property
+    def elapsed_seconds(self) -> float:
+        return time.monotonic() - self.started_at
+
+    def max_pages_for_query(self, requested: int) -> int:
+        remaining_requests = self.budget.max_total_requests - self.requests_used
+        return min(requested, remaining_requests)
+
+    def max_items_for_query(self, requested: int) -> int:
+        remaining_items = self.budget.max_total_items - self.items_used
+        return min(requested, remaining_items)
+
+    def record_execution(
+        self,
+        query: SearchQueryConfig,
+        execution: CollectionExecutionReport,
+    ) -> CollectionExecutionReport:
+        requests = int(execution.network.get("requests", 0) or 0)
+        items = execution.summary.found
+        self.requests_used += requests
+        self.items_used += items
+        if self.requests_used >= self.budget.max_total_requests:
+            self.exhausted_by = "max_total_requests"
+        elif self.items_used >= self.budget.max_total_items:
+            self.exhausted_by = "max_total_items"
+        elif self.elapsed_seconds >= self.budget.max_duration_seconds:
+            self.exhausted_by = "max_duration_seconds"
+        if self.exhausted_by is None:
+            return execution
+        warning = f"Plano interrompido pelo orcamento: {self.exhausted_by}."
+        metadata = {
+            **execution.metadata,
+            "budget_limited_by": self.exhausted_by,
+            "budget_query_key": query.key,
+            "partial": True,
+            "truncated": True,
+        }
+        return replace(
+            execution,
+            warnings=[*execution.warnings, warning],
+            metadata=metadata,
+        )
 
 
 @app.callback()
@@ -247,7 +332,7 @@ def import_url_command(
         _apply_command_debug(ctx, debug)
         settings = _settings(ctx)
         network = load_network_config(settings.config_dir)
-        client = HttpClient(network.http)
+        client = _http_client(network)
         context = build_collection_context(
             collector="jobposting",
             company_name=None,
@@ -395,21 +480,27 @@ def collect_all_command(
         boards = _filtered_boards(settings, collector=collector, tags=tag or [])
         executions: list[CollectionExecutionReport] = []
         errors: list[str] = []
-        for board in boards:
-            try:
-                executions.append(
-                    _collect_single_board(
-                        settings,
-                        ResolvedBoard(config=board, persist=True),
-                        dry_run=dry_run,
-                        max_items=max_items_per_board,
-                        since=None,
+        network = load_network_config(settings.config_dir)
+        client = _http_client(network)
+        try:
+            for board in boards:
+                try:
+                    executions.append(
+                        _collect_single_board(
+                            settings,
+                            ResolvedBoard(config=board, persist=True),
+                            dry_run=dry_run,
+                            max_items=max_items_per_board,
+                            since=None,
+                            http_client=client,
+                        )
                     )
-                )
-            except Exception as exc:
-                errors.append(f"{board.key}: {exc}")
-                if not continue_on_error:
-                    raise
+                except Exception as exc:
+                    errors.append(f"{board.key}: {exc}")
+                    if not continue_on_error:
+                        raise
+        finally:
+            client.close()
         _print_collect_all_result(executions, errors)
         if report is not None:
             _write_collect_all_report(executions, errors, report)
@@ -605,6 +696,18 @@ def collect_search_plan_command(
         int | None,
         typer.Option("--max-items-per-query", help="Limite positivo de itens por consulta."),
     ] = None,
+    max_total_requests: Annotated[
+        int | None,
+        typer.Option("--max-total-requests", help="Orcamento positivo total de requests."),
+    ] = None,
+    max_total_items: Annotated[
+        int | None,
+        typer.Option("--max-total-items", help="Orcamento positivo total de itens."),
+    ] = None,
+    max_duration_seconds: Annotated[
+        int | None,
+        typer.Option("--max-duration-seconds", help="Orcamento positivo total de duracao."),
+    ] = None,
     continue_on_error: Annotated[
         bool,
         typer.Option("--continue-on-error/--stop-on-error", help="Continua apos falhas."),
@@ -618,6 +721,13 @@ def collect_search_plan_command(
 
     def action() -> None:
         settings = _settings(ctx)
+        network = load_network_config(settings.config_dir)
+        budget = _search_plan_budget(
+            network,
+            max_total_requests=max_total_requests,
+            max_total_items=max_total_items,
+            max_duration_seconds=max_duration_seconds,
+        )
         queries = _filtered_queries(
             settings,
             collector=collector,
@@ -626,27 +736,44 @@ def collect_search_plan_command(
         )
         executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]] = []
         errors: list[str] = []
-        for query in queries:
-            try:
-                executions.append(
-                    (
-                        query,
-                        _collect_single_query(
-                            settings,
-                            query,
-                            dry_run=dry_run,
-                            max_pages=max_pages_per_query,
-                            max_items=max_items_per_query,
-                        ),
-                    )
+        budget_state = _SearchPlanBudgetState(budget)
+        client = _http_client(network)
+        try:
+            for query in queries:
+                if budget_state.should_stop_before_query():
+                    break
+                query_max_pages = budget_state.max_pages_for_query(
+                    _positive_override(max_pages_per_query, "max-pages-per-query")
+                    or query.max_pages
                 )
-            except Exception as exc:
-                errors.append(f"{query.key}: {exc}")
-                if not continue_on_error:
-                    raise
-        _print_collect_search_plan_result(executions, errors)
+                query_max_items = budget_state.max_items_for_query(
+                    _positive_override(max_items_per_query, "max-items-per-query")
+                    or query.max_items
+                )
+                if query_max_pages <= 0 or query_max_items <= 0:
+                    break
+                try:
+                    execution = _collect_single_query(
+                        settings,
+                        query,
+                        dry_run=dry_run,
+                        max_pages=query_max_pages,
+                        max_items=query_max_items,
+                        http_client=client,
+                    )
+                    execution = budget_state.record_execution(query, execution)
+                    executions.append((query, execution))
+                except Exception as exc:
+                    errors.append(f"{query.key}: {exc}")
+                    if not continue_on_error:
+                        raise
+                if budget_state.exhausted:
+                    break
+        finally:
+            client.close()
+        _print_collect_search_plan_result(executions, errors, budget_state)
         if report is not None:
-            _write_collect_search_plan_report(executions, errors, report)
+            _write_collect_search_plan_report(executions, errors, report, budget_state)
         if errors:
             raise typer.Exit(1)
 
@@ -707,6 +834,65 @@ def evaluate_job(
     _run(ctx, action)
 
 
+@app.command("reevaluate-jobs")
+def reevaluate_jobs_command(
+    ctx: typer.Context,
+    provider: Annotated[
+        str | None,
+        typer.Option("--provider", help="Filtra por provider da publicacao."),
+    ] = None,
+    status: Annotated[
+        str | None,
+        typer.Option("--status", help="Filtra por estado da vaga."),
+    ] = None,
+    only_missing_relevance: Annotated[
+        bool,
+        typer.Option(
+            "--only-missing-relevance",
+            help="Reavalia apenas vagas sem relevancia preenchida.",
+        ),
+    ] = False,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Limite positivo de vagas para reavaliar."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Simula sem alterar o banco."),
+    ] = False,
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", help="Caminho para relatorio JSON."),
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Exibe traceback completo para este comando."),
+    ] = False,
+) -> None:
+    """Reavalia elegibilidade, relevancia e ranking de forma controlada."""
+
+    def action() -> None:
+        _apply_command_debug(ctx, debug)
+        settings = _settings(ctx)
+        parsed_status = parse_enum_value(JobStatus, status) if status is not None else None
+        parsed_limit = _positive_override(limit, "limit")
+        with session_scope(settings) as session:
+            summary = reevaluate_jobs(
+                session,
+                settings,
+                provider=provider,
+                status=parsed_status,
+                only_missing_relevance=only_missing_relevance,
+                limit=parsed_limit,
+                dry_run=dry_run,
+            )
+        if report is not None:
+            _write_reevaluate_report(summary, report)
+        _print_reevaluate_summary(summary)
+
+    _run(ctx, action)
+
+
 @app.command("list-jobs")
 def list_jobs(
     ctx: typer.Context,
@@ -719,8 +905,30 @@ def list_jobs(
     ] = None,
     city: Annotated[str | None, typer.Option(help="Filtra por cidade canônica.")] = None,
     min_score: Annotated[int | None, typer.Option(help="Nota mínima do ranking.")] = None,
+    provider: Annotated[str | None, typer.Option("--provider", help="Filtra por provider.")] = None,
+    relevance_status: Annotated[
+        str | None,
+        typer.Option("--relevance-status", help="Filtra por relevância."),
+    ] = None,
+    active: Annotated[
+        bool | None,
+        typer.Option("--active/--inactive", help="Filtra por publicação ativa ou inativa."),
+    ] = None,
+    source_type: Annotated[
+        str | None,
+        typer.Option("--source-type", help="Filtra por tipo de fonte proprietária."),
+    ] = None,
+    query_key: Annotated[
+        str | None,
+        typer.Option("--query-key", help="Filtra por consulta que encontrou a vaga."),
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Limite positivo de resultados.")] = 50,
+    sort: Annotated[
+        str,
+        typer.Option("--sort", help="Ordenação: score, newest ou first-seen."),
+    ] = "score",
 ) -> None:
-    """Lista vagas com filtros básicos."""
+    """Lista vagas com filtros de inspeção."""
 
     def action() -> None:
         settings = _settings(ctx)
@@ -732,6 +940,13 @@ def list_jobs(
                 work_model=work_model,
                 city=city,
                 min_score=min_score,
+                provider=provider,
+                relevance_status=relevance_status,
+                active=active,
+                source_type=source_type,
+                query_key=query_key,
+                limit=limit,
+                sort=sort,
             )
             _print_jobs_table(rows)
 
@@ -796,7 +1011,8 @@ def show_config(
         table.add_row("Tipos", ", ".join(profile_data.opportunity_priority))
         table.add_row("Empresas bloqueadas", str(len(blocked.all_companies)))
         table.add_row("Banco", database_display_path(settings))
-        table.add_row("Versão das regras", rules.rules_version)
+        table.add_row("Regras de elegibilidade", rules.rules_version)
+        table.add_row("Regras de relevância", load_relevance_rules(settings.config_dir).version)
         console.print(table)
 
         if loaded_profile.used_example:
@@ -843,6 +1059,43 @@ def _apply_command_debug(ctx: typer.Context, debug: bool) -> None:
         ctx.obj = CliState(debug=True)
 
 
+def _http_client(network: NetworkConfig) -> HttpClient:
+    try:
+        return HttpClient(
+            network.http,
+            minimum_interval_between_requests_seconds=(
+                network.collection.minimum_interval_between_requests_seconds
+            ),
+        )
+    except TypeError as exc:
+        if "minimum_interval_between_requests_seconds" not in str(exc):
+            raise
+        return HttpClient(network.http)
+
+
+def _search_plan_budget(
+    network: NetworkConfig,
+    *,
+    max_total_requests: int | None,
+    max_total_items: int | None,
+    max_duration_seconds: int | None,
+) -> SearchPlanBudget:
+    return SearchPlanBudget(
+        max_total_requests=(
+            _positive_override(max_total_requests, "max-total-requests")
+            or network.search_plan.max_total_requests
+        ),
+        max_total_items=(
+            _positive_override(max_total_items, "max-total-items")
+            or network.search_plan.max_total_items
+        ),
+        max_duration_seconds=(
+            _positive_override(max_duration_seconds, "max-duration-seconds")
+            or network.search_plan.max_duration_seconds
+        ),
+    )
+
+
 def _resolve_board_config(
     settings: Settings,
     *,
@@ -883,11 +1136,12 @@ def _collect_single_board(
     dry_run: bool,
     max_items: int | None,
     since: str | None,
+    http_client: HttpClient | None = None,
 ) -> CollectionExecutionReport:
     board = resolved.config
     effective_max_items = _positive_override(max_items, "max-items")
     network = load_network_config(settings.config_dir)
-    client = HttpClient(network.http)
+    client = http_client or _http_client(network)
     cache_etag: str | None = None
     cache_last_modified: str | None = None
     if not dry_run and resolved.persist:
@@ -923,7 +1177,8 @@ def _collect_single_board(
             )
         raise
     finally:
-        client.close()
+        if http_client is None:
+            client.close()
     with session_scope(settings) as session:
         return run_collection_persistence(
             session,
@@ -941,13 +1196,14 @@ def _collect_single_query(
     dry_run: bool,
     max_pages: int | None,
     max_items: int | None,
+    http_client: HttpClient | None = None,
 ) -> CollectionExecutionReport:
     if not query.enabled:
         raise RadarError(f"Consulta desativada: {query.key}")
     effective_max_pages = _positive_override(max_pages, "max-pages") or query.max_pages
     effective_max_items = _positive_override(max_items, "max-items") or query.max_items
     network = load_network_config(settings.config_dir)
-    client = HttpClient(network.http)
+    client = http_client or _http_client(network)
     context = build_collection_context(
         collector=query.collector,
         company_name=None,
@@ -984,7 +1240,8 @@ def _collect_single_query(
             )
         raise
     finally:
-        client.close()
+        if http_client is None:
+            client.close()
     with session_scope(settings) as session:
         return run_collection_persistence(
             session,
@@ -1216,6 +1473,7 @@ def _query_report_payload(
 def _print_collect_search_plan_result(
     executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]],
     errors: list[str],
+    budget_state: _SearchPlanBudgetState,
 ) -> None:
     table = Table(title="Plano de consultas")
     table.add_column("Query", no_wrap=True)
@@ -1235,6 +1493,23 @@ def _print_collect_search_plan_result(
             str(summary.ineligible),
         )
     console.print(table)
+    budget = Table(title="Orcamento do plano")
+    budget.add_column("Metrica")
+    budget.add_column("Valor", justify="right")
+    budget.add_row(
+        "Requests usados",
+        f"{budget_state.requests_used}/{budget_state.budget.max_total_requests}",
+    )
+    budget.add_row(
+        "Itens usados",
+        f"{budget_state.items_used}/{budget_state.budget.max_total_items}",
+    )
+    budget.add_row(
+        "Duracao usada",
+        f"{int(budget_state.elapsed_seconds)}/{budget_state.budget.max_duration_seconds}s",
+    )
+    budget.add_row("Encerrado por", budget_state.exhausted_by or "-")
+    console.print(budget)
     for error in errors:
         console.print(f"[red]Falha:[/red] {error}")
 
@@ -1243,10 +1518,22 @@ def _write_collect_search_plan_report(
     executions: list[tuple[SearchQueryConfig, CollectionExecutionReport]],
     errors: list[str],
     report_path: Path,
+    budget_state: _SearchPlanBudgetState,
 ) -> None:
     payload = {
         "queries": [_query_report_payload(query, execution) for query, execution in executions],
         "errors": errors,
+        "budget": {
+            "max_total_requests": budget_state.budget.max_total_requests,
+            "max_total_items": budget_state.budget.max_total_items,
+            "max_duration_seconds": budget_state.budget.max_duration_seconds,
+            "requests_used": budget_state.requests_used,
+            "items_used": budget_state.items_used,
+            "elapsed_seconds": round(budget_state.elapsed_seconds, 3),
+            "partial": budget_state.exhausted,
+            "truncated": budget_state.exhausted,
+            "limited_by": budget_state.exhausted_by,
+        },
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1309,6 +1596,37 @@ def _print_import_report(report: ImportFileReport, *, title: str) -> None:
     console.print(table)
 
 
+def _print_reevaluate_summary(summary: ReevaluateJobsSummary) -> None:
+    title = "Simulacao de reavaliacao" if summary.dry_run else "Reavaliacao concluida"
+    table = Table(title=title)
+    table.add_column("Metrica")
+    table.add_column("Valor", justify="right")
+    table.add_row("Vagas avaliadas", str(summary.total))
+    table.add_row("Decisoes alteradas", str(summary.changed))
+    table.add_row("Sem mudanca", str(summary.unchanged))
+    console.print(table)
+
+
+def _write_reevaluate_report(summary: ReevaluateJobsSummary, report_path: Path) -> None:
+    payload = {
+        "dry_run": summary.dry_run,
+        "summary": {
+            "total": summary.total,
+            "changed": summary.changed,
+            "unchanged": summary.unchanged,
+        },
+        "changes": [
+            {"job_id": change.job_id, "before": change.before, "after": change.after}
+            for change in summary.changes
+        ],
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def _query_jobs(
     session: Session,
     *,
@@ -1317,7 +1635,18 @@ def _query_jobs(
     work_model: str | None,
     city: str | None,
     min_score: int | None,
+    provider: str | None,
+    relevance_status: str | None,
+    active: bool | None,
+    source_type: str | None,
+    query_key: str | None,
+    limit: int,
+    sort: str,
 ) -> list[tuple[Job, Company, Decision | None]]:
+    if limit <= 0:
+        raise RadarError("--limit deve ser um inteiro positivo.")
+    if sort not in {"score", "newest", "first-seen"}:
+        raise RadarError("--sort deve ser score, newest ou first-seen.")
     statement = select(Job, Company, Decision).join(Company).outerjoin(Decision)
     if status is not None:
         statement = statement.where(Job.status == parse_enum_value(JobStatus, status))
@@ -1331,7 +1660,36 @@ def _query_jobs(
         statement = statement.where(Job.city == city)
     if min_score is not None:
         statement = statement.where(Decision.ranking_score >= min_score)
-    statement = statement.order_by(Decision.ranking_score.desc(), Job.id.asc())
+    if provider is not None:
+        statement = statement.where(Job.postings.any(Posting.provider == provider.strip().lower()))
+    if relevance_status is not None:
+        statement = statement.where(
+            Decision.relevance_status == parse_enum_value(RelevanceStatus, relevance_status)
+        )
+    if active is not None:
+        statement = statement.where(Job.postings.any(Posting.is_active.is_(active)))
+    if source_type is not None:
+        statement = statement.where(
+            Job.postings.any(Posting.source.has(Source.source_type == source_type.strip().lower()))
+        )
+    if query_key is not None:
+        statement = statement.where(
+            Job.postings.any(
+                Posting.discovery_hits.any(
+                    DiscoveryHit.search_query.has(SearchQuery.key == query_key)
+                )
+            )
+        )
+    first_seen = (
+        select(func.min(Posting.first_seen_at)).where(Posting.job_id == Job.id).scalar_subquery()
+    )
+    if sort == "score":
+        statement = statement.order_by(Decision.ranking_score.desc(), Job.id.asc())
+    elif sort == "newest":
+        statement = statement.order_by(desc(Job.published_at), Job.id.desc())
+    else:
+        statement = statement.order_by(desc(first_seen), Job.id.asc())
+    statement = statement.limit(limit)
     rows = session.execute(statement).all()
     return [(row[0], row[1], row[2]) for row in rows]
 
@@ -1382,18 +1740,35 @@ def _print_job_detail(job: Job) -> None:
     details.add_row("Localização", _location_label(job))
     details.add_row("Estado", job.status.value.lower())
     details.add_row("URL", job.application_url or "-")
+    details.add_row("Departamento", job.department or "-")
+    details.add_row("Área", job.area or "-")
+    details.add_row("Tecnologias", ", ".join(_job_technologies(job)) or "-")
     details.add_row("Curso", job.course_requirement or "-")
     console.print(Panel(details, title="Vaga canônica"))
 
     postings = Table(title="Publicações associadas")
     postings.add_column("ID", justify="right")
     postings.add_column("Fonte")
+    postings.add_column("Provider")
+    postings.add_column("Identity")
+    postings.add_column("Scope")
+    postings.add_column("Ativa")
+    postings.add_column("Missing", justify="right")
+    postings.add_column("First seen")
+    postings.add_column("Last seen")
     postings.add_column("URL")
     postings.add_column("Status")
     for posting in job.postings:
         postings.add_row(
             str(posting.id),
             posting.source.name,
+            posting.provider or "-",
+            posting.provider_identity_key or "-",
+            posting.collection_scope_key or "-",
+            "sim" if posting.is_active else "não",
+            str(posting.missing_count),
+            _date_or_dash(posting.first_seen_at),
+            _date_or_dash(posting.last_seen_at),
             posting.original_url,
             posting.status.value.lower(),
         )
@@ -1409,10 +1784,22 @@ def _print_job_detail(job: Job) -> None:
         decision_table.add_row("Motivo", decision.reason_code)
         decision_table.add_row("Descrição", decision.reason_text)
         decision_table.add_row(
+            "Relevância",
+            decision.relevance_status.value.lower()
+            if decision.relevance_status is not None
+            else "-",
+        )
+        decision_table.add_row(
+            "Score relevância",
+            "-" if decision.relevance_score is None else str(decision.relevance_score),
+        )
+        decision_table.add_row("Resumo relevância", _relevance_summary_label(decision))
+        decision_table.add_row(
             "Nota", "-" if decision.ranking_score is None else str(decision.ranking_score)
         )
         decision_table.add_row("Ranking", _ranking_breakdown_label(decision))
-        decision_table.add_row("Versão das regras", decision.rules_version)
+        decision_table.add_row("Regras de elegibilidade", decision.rules_version)
+        decision_table.add_row("Regras de relevância", decision.relevance_rules_version or "-")
     console.print(decision_table)
 
     applications = Table(title="Candidaturas")
@@ -1429,6 +1816,26 @@ def _print_job_detail(job: Job) -> None:
     else:
         applications.add_row("-", "nenhuma", "-")
     console.print(applications)
+
+    hits = Table(title="Consultas que encontraram a vaga")
+    hits.add_column("Query")
+    hits.add_column("Último hit")
+    hits.add_column("Match")
+    hits.add_column("Página", justify="right")
+    hits.add_column("Posição", justify="right")
+    latest_hits = _latest_hits_by_query(job)
+    if latest_hits:
+        for hit in latest_hits:
+            hits.add_row(
+                hit.search_query.key,
+                _date_or_dash(hit.observed_at),
+                hit.match_status,
+                "-" if hit.page_number is None else str(hit.page_number),
+                "-" if hit.position_in_results is None else str(hit.position_in_results),
+            )
+    else:
+        hits.add_row("-", "-", "-", "-", "-")
+    console.print(hits)
 
 
 def _print_stats(session: Session) -> None:
@@ -1659,6 +2066,10 @@ def _print_query_detail(session: Session, query: SearchQueryConfig) -> None:
         details.add_row("Falhas consecutivas", str(db_query.consecutive_failures))
         details.add_row("Hits", str(_hits_for_query(session, db_query)))
         details.add_row("Vagas unicas", str(_unique_postings_for_query(session, db_query)))
+        details.add_row(
+            "Lifecycle conflicts",
+            str(_lifecycle_conflicts_for_query(session, db_query)),
+        )
         if db_query.last_run_id is not None:
             run = session.get(SourceRun, db_query.last_run_id)
             details.add_row("Novos resultados", str(run.items_created if run else 0))
@@ -1701,6 +2112,7 @@ def _print_query_health(session: Session) -> None:
     table.add_column("Novas", justify="right")
     table.add_column("Hits", justify="right")
     table.add_column("Unicas", justify="right")
+    table.add_column("Conflicts", justify="right")
     for query in queries:
         run = session.get(SourceRun, query.last_run_id) if query.last_run_id else None
         table.add_row(
@@ -1713,6 +2125,7 @@ def _print_query_health(session: Session) -> None:
             str(run.items_created if run else 0),
             str(_hits_for_query(session, query)),
             str(_unique_postings_for_query(session, query)),
+            str(_lifecycle_conflicts_for_query(session, query)),
         )
     if queries:
         console.print(table)
@@ -1736,6 +2149,18 @@ def _unique_postings_for_query(session: Session, query: SearchQuery | None) -> i
         select(func.count(func.distinct(DiscoveryHit.posting_id))).where(
             DiscoveryHit.search_query_id == query.id,
             DiscoveryHit.posting_id.is_not(None),
+        )
+    )
+    return int(value or 0)
+
+
+def _lifecycle_conflicts_for_query(session: Session, query: SearchQuery | None) -> int:
+    if query is None:
+        return 0
+    value = session.scalar(
+        select(func.count(DiscoveryHit.id)).where(
+            DiscoveryHit.search_query_id == query.id,
+            DiscoveryHit.match_status == "lifecycle_conflict",
         )
     )
     return int(value or 0)
@@ -1877,6 +2302,49 @@ def _ranking_breakdown_label(decision: Decision) -> str:
     return ", ".join(f"{key}: {value}" for key, value in data.items())
 
 
+def _job_technologies(job: Job) -> list[str]:
+    return list(technologies_from_json(job.technologies_json))
+
+
+def _relevance_summary_label(decision: Decision) -> str:
+    if not decision.relevance_reason_json:
+        return "-"
+    try:
+        data = json.loads(decision.relevance_reason_json)
+    except json.JSONDecodeError:
+        return "-"
+    pieces: list[str] = []
+    for key in (
+        "core_matches",
+        "strong_adjacent_matches",
+        "contextual_adjacent_matches",
+        "supporting_context_matches",
+        "negative_matches",
+    ):
+        matches = data.get(key)
+        if not isinstance(matches, dict):
+            continue
+        terms = [
+            str(term)
+            for values in matches.values()
+            if isinstance(values, list)
+            for term in values[:3]
+        ]
+        if terms:
+            pieces.append(f"{key}: {', '.join(terms[:4])}")
+    return "; ".join(pieces) if pieces else str(data.get("explanation") or "-")
+
+
+def _latest_hits_by_query(job: Job) -> list[DiscoveryHit]:
+    latest: dict[int, DiscoveryHit] = {}
+    for posting in job.postings:
+        for hit in posting.discovery_hits:
+            current = latest.get(hit.search_query_id)
+            if current is None or hit.observed_at > current.observed_at:
+                latest[hit.search_query_id] = hit
+    return sorted(latest.values(), key=lambda hit: hit.search_query.key)
+
+
 def _doctor_checks(settings: Settings) -> list[tuple[str, str, str]]:
     checks: list[tuple[str, str, str]] = []
     checks.append(_check_python_version())
@@ -1923,7 +2391,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0005_search_queries_and_gupy":
+    if version == "0006_relevance_consistency_and_observations":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 

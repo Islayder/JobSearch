@@ -51,8 +51,11 @@ FastAPI, Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
 8. O orquestrador registra `SourceRun`, isola a coleta por escopo estavel de
    board, atualiza publicacoes conhecidas, cria revisoes quando conteudo muda e
    fecha publicacoes ausentes somente quando a autoridade da coleta permite.
-9. `radar evaluate-all`, `radar list-jobs`, `radar show-job`, `radar stats`,
-   `radar boards` e `radar source-health` consultam ou atualizam o banco.
+9. A relevancia usa uma entrada canonica compartilhada por dry-run, importacao,
+   coleta persistida e reavaliacao de vagas existentes.
+10. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
+   `radar show-job`, `radar stats`, `radar boards` e `radar source-health`
+   consultam ou atualizam o banco.
 
 ## Autoridade da Coleta
 
@@ -64,6 +67,17 @@ Toda coleta tem autoridade explicita:
 - `DISCOVERY_QUERY`: buscas globais ou filtradas apenas observam resultados.
   Nunca fecham publicacoes ou vagas canonicas por ausencia.
 - `SINGLE_PAGE`: paginas individuais nao fecham outras publicacoes.
+
+Quando uma consulta de descoberta encontra uma publicacao ja pertencente a outro
+escopo autoritativo, ela registra a observacao e o `DiscoveryHit`, mas nao muda
+`collection_scope_key`, `source_id`, `source_run_id`, `missing_count`,
+`is_active`, `closed_reason` ou `last_seen_at` autoritativos.
+
+## Controle de Rede
+
+O cliente HTTP central aplica intervalo minimo por host com relogio monotonic.
+`collect-search-plan` tambem usa um orcamento global de requisicoes, itens e
+duracao, compartilhado por todas as consultas do plano.
 
 ## Rollback
 

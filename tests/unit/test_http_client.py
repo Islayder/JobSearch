@@ -259,6 +259,84 @@ def test_head_is_allowed_but_timeout_failure_is_controlled() -> None:
     client.close()
 
 
+def test_http_rate_limiter_waits_per_host_without_real_sleep() -> None:
+    calls: list[str] = []
+    sleeps: list[float] = []
+    clock_value = 0.0
+
+    def clock() -> float:
+        return clock_value
+
+    def sleep(seconds: float) -> None:
+        nonlocal clock_value
+        sleeps.append(seconds)
+        clock_value += seconds
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"ok": True})
+
+    client = HttpClient(
+        HttpConfig(),
+        resolver=FakeResolver(
+            {
+                "public.example": ["93.184.216.34"],
+                "other.example": ["93.184.216.35"],
+            }
+        ),
+        transport=httpx.MockTransport(handler),
+        sleep=sleep,
+        monotonic=clock,
+        minimum_interval_between_requests_seconds=2,
+    )
+
+    client.get("https://public.example/jobs")
+    client.get("https://public.example/jobs?page=2")
+    client.get("https://other.example/jobs")
+
+    assert len(calls) == 3
+    assert sleeps == [2.0]
+    client.close()
+
+
+def test_http_rate_limiter_applies_to_redirect_and_retry() -> None:
+    responses = [
+        httpx.Response(302, headers={"Location": "/redirected"}),
+        httpx.Response(429, headers={"Retry-After": "3"}),
+        httpx.Response(200, json={"ok": True}),
+    ]
+    sleeps: list[float] = []
+    clock_value = 0.0
+
+    def clock() -> float:
+        return clock_value
+
+    def sleep(seconds: float) -> None:
+        nonlocal clock_value
+        sleeps.append(seconds)
+        clock_value += seconds
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return responses.pop(0)
+
+    client = HttpClient(
+        HttpConfig(max_retries=1),
+        resolver=FakeResolver(),
+        transport=httpx.MockTransport(handler),
+        sleep=sleep,
+        monotonic=clock,
+        minimum_interval_between_requests_seconds=2,
+    )
+
+    result = client.get("https://public.example/jobs")
+
+    assert result.status_code == 200
+    assert result.requests_made == 3
+    assert result.retries == 1
+    assert sleeps == [2.0, 3.0]
+    client.close()
+
+
 def _client(
     handler: httpx.MockTransport | object,
     *,

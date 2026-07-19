@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.tmp/
+.pytest-tmp/
 .coverage
 htmlcov/
 dist/
@@ -13,6 +15,7 @@ build/
 data/database/*.sqlite3
 data/database/*.sqlite
 data/database/*.db
+data/database/backups/
 data/exports/*
 !data/exports/.gitkeep
 data/imports/*
