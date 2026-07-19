@@ -12,6 +12,7 @@ CSRF_COOKIE_NAME = "radar_csrf"
 MUTABLE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 MAX_PROFILE_UPLOAD_BYTES = 256 * 1024
 ALLOWED_PROFILE_SUFFIXES = {".yaml", ".yml", ".json", ".txt"}
+MAX_RESUME_UPLOAD_BYTES = 8 * 1024 * 1024
 
 
 def csrf_serializer(secret_key: str) -> URLSafeSerializer:
@@ -142,6 +143,23 @@ async def read_limited_profile_upload(file: UploadFile) -> bytes:
     content = b"".join(chunks)
     validate_upload_metadata(filename, content)
     return content
+
+
+async def read_limited_resume_upload(file: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_RESUME_UPLOAD_BYTES:
+                raise HTTPException(status_code=400, detail="Arquivo maior que 8 MB.")
+            chunks.append(chunk)
+    finally:
+        await file.close()
+    return b"".join(chunks)
 
 
 def clean_upload_suffix(filename: str) -> str:

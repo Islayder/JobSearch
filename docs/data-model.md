@@ -41,6 +41,8 @@ erDiagram
     PROFESSIONAL_PROFILE_VERSION ||--o{ LANGUAGE_SKILL : languages
     PROFESSIONAL_PROFILE ||--o{ PROFILE_ACTIVATION_EVENT : activation_audit
     PROFESSIONAL_PROFILE_VERSION ||--o{ PROFILE_ACTIVATION_EVENT : activation_audit
+    PROFESSIONAL_PROFILE_VERSION ||--o{ RESUME_IMPORT_SESSION : confirmed_from
+    RESUME_IMPORT_SESSION ||--o{ RESUME_IMPORT_CANDIDATE : reviews
     JOB ||--o{ JOB_PROFILE_COMPARISON : compared_by
     PROFESSIONAL_PROFILE_VERSION ||--o{ JOB_PROFILE_COMPARISON : used_in
     JOB_PROFILE_COMPARISON ||--o{ JOB_REQUIREMENT_MATCH : explains
@@ -173,6 +175,21 @@ estruturado, sem gerar arquivo novo e sem versionar o arquivo real no Git. A
 entidade base `Resume` e reutilizada por perfil; novas importacoes criam novas
 `ResumeVersion` quando o conteudo muda.
 
+`ResumeImportSession` registra um rascunho local de importacao revisada de
+curriculo. Campos principais: `import_key` aleatorio, `source_format`,
+`sanitized_filename`, `content_hash`, `status`, cabecalho revisavel,
+contadores, avisos sanitizados, timestamps e `confirmed_profile_version_id`
+opcional. Status possiveis: `EXTRACTING`, `REVIEWING`, `CONFIRMED`,
+`DISCARDED` e `FAILED`.
+
+`ResumeImportCandidate` guarda cada item extraido para revisao humana. Campos
+principais: sessao, tipo (`HEADLINE`, `SUMMARY`, `SKILL`, `EXPERIENCE`,
+`PROJECT`, `EDUCATION`, `LANGUAGE` ou `AMBIGUOUS`), ordem, payload original,
+payload revisado opcional, decisao (`PENDING`, `ACCEPTED`, `EDITED` ou
+`REMOVED`), confianca, explicacao, referencia e trecho curto de origem. O
+arquivo bruto, bytes originais, texto integral extraido e linhas de contato nao
+sao persistidos nessas tabelas.
+
 `JobProfileComparison` guarda a comparacao entre uma vaga e uma versao de
 perfil. `JobRequirementMatch` guarda cada requisito como obrigatorio ou
 desejavel, com status `MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` ou
@@ -207,6 +224,11 @@ presente. `ApplicationMatch.fingerprint` e unico quando presente.
 `ProfessionalProfileVersion` possui indice unico parcial para garantir uma
 unica versao ativa global. `ProfileActivationEvent` mantem auditoria da troca
 sem depender do historico editavel do perfil.
+
+`ResumeImportSession.import_key` e unico e usado nas rotas web em vez do ID
+sequencial. Candidatos usam indices por sessao/tipo e sessao/decisao. A chave
+estrangeira para `ProfessionalProfileVersion` so e preenchida depois da
+confirmacao humana.
 
 `JobProfileComparison` e unico por `job_id`, `profile_version_id`,
 `rules_version` e `job_content_hash`. Reexecutar a mesma comparacao retorna o

@@ -3441,7 +3441,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0009_tracking_integrity_and_calendar":
+    if version == "0011_resume_import_review":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 

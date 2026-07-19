@@ -13,7 +13,8 @@ python -m venv .venv
 ```
 
 O extra `web` e opcional para uso de CLI, mas necessario para `radar web` e
-para os testes da interface.
+para os testes da interface. Ele tambem instala os leitores locais de PDF
+textual e DOCX usados pelo importador revisado de curriculo.
 
 ## Banco Local
 
@@ -68,7 +69,9 @@ A interface abre em `http://127.0.0.1:8000` por padrao. Ela e local-first,
 aplica migracoes antes de iniciar e nao deve ser exposta em rede.
 
 Para validar fluxos web manualmente em banco temporario, conclua o onboarding,
-crie um perfil manual, filtre vagas, favorite/desfavorite, descarte/restaure,
+importe um curriculo PDF textual ou DOCX, revise itens, edite um candidato,
+remova/restaure outro, confirme o perfil, descarte um rascunho separado, crie
+um perfil manual, filtre vagas, favorite/desfavorite, descarte/restaure,
 registre candidatura, atualize etapas, crie evento de agenda e execute uma
 coleta mockada ou uma coleta real autorizada. A coleta web roda em segundo
 plano e bloqueia um segundo disparo enquanto estiver ativa.

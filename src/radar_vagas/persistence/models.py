@@ -35,6 +35,10 @@ from radar_vagas.domain.enums import (
     RelevanceStatus,
     RequirementKind,
     RequirementMatchStatus,
+    ResumeImportCandidateType,
+    ResumeImportConfidenceLabel,
+    ResumeImportDecision,
+    ResumeImportStatus,
     ReviewEventType,
     ReviewState,
     SourceRunStatus,
@@ -644,6 +648,91 @@ class ProfessionalProfileVersion(Base):
         back_populates="profile_version",
         foreign_keys="ProfileActivationEvent.profile_version_id",
     )
+    resume_import_sessions: Mapped[list["ResumeImportSession"]] = relationship(
+        back_populates="confirmed_profile_version"
+    )
+
+
+class ResumeImportSession(Base):
+    __tablename__ = "resume_import_sessions"
+    __table_args__ = (
+        UniqueConstraint("import_key", name="uq_resume_import_sessions_import_key"),
+        Index("ix_resume_import_sessions_status", "status"),
+        Index("ix_resume_import_sessions_content_hash", "content_hash"),
+        Index("ix_resume_import_sessions_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    import_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_format: Mapped[str] = mapped_column(String(20), nullable=False)
+    sanitized_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[ResumeImportStatus] = mapped_column(
+        enum_type(ResumeImportStatus),
+        default=ResumeImportStatus.REVIEWING,
+        nullable=False,
+    )
+    profile_name: Mapped[str | None] = mapped_column(String(255))
+    headline: Mapped[str | None] = mapped_column(String(500))
+    summary: Mapped[str | None] = mapped_column(Text)
+    page_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    extracted_character_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    warnings_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    confirmed_profile_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("professional_profile_versions.id"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    candidates: Mapped[list["ResumeImportCandidate"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ResumeImportCandidate.sequence",
+    )
+    confirmed_profile_version: Mapped[ProfessionalProfileVersion | None] = relationship(
+        back_populates="resume_import_sessions"
+    )
+
+
+class ResumeImportCandidate(Base):
+    __tablename__ = "resume_import_candidates"
+    __table_args__ = (
+        Index("ix_resume_import_candidates_session_type", "session_id", "candidate_type"),
+        Index("ix_resume_import_candidates_session_decision", "session_id", "decision"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("resume_import_sessions.id"), nullable=False, index=True
+    )
+    candidate_type: Mapped[ResumeImportCandidateType] = mapped_column(
+        enum_type(ResumeImportCandidateType), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    original_payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    reviewed_payload_json: Mapped[str | None] = mapped_column(Text)
+    decision: Mapped[ResumeImportDecision] = mapped_column(
+        enum_type(ResumeImportDecision),
+        default=ResumeImportDecision.PENDING,
+        nullable=False,
+    )
+    confidence_score: Mapped[float | None] = mapped_column(Float)
+    confidence_label: Mapped[ResumeImportConfidenceLabel | None] = mapped_column(
+        enum_type(ResumeImportConfidenceLabel)
+    )
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    source_reference: Mapped[str | None] = mapped_column(String(500))
+    source_excerpt: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    session: Mapped[ResumeImportSession] = relationship(back_populates="candidates")
 
 
 class ProfileActivationEvent(Base):

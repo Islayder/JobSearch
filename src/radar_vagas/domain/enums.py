@@ -150,6 +150,46 @@ class ProfileEvidenceType(ReadableEnum):
     RESUME = "RESUME"
 
 
+class ExtractedBlockType(ReadableEnum):
+    HEADING = "HEADING"
+    PARAGRAPH = "PARAGRAPH"
+    LIST_ITEM = "LIST_ITEM"
+    TABLE_CELL = "TABLE_CELL"
+    PAGE_BREAK = "PAGE_BREAK"
+
+
+class ResumeImportStatus(ReadableEnum):
+    EXTRACTING = "EXTRACTING"
+    REVIEWING = "REVIEWING"
+    CONFIRMED = "CONFIRMED"
+    DISCARDED = "DISCARDED"
+    FAILED = "FAILED"
+
+
+class ResumeImportCandidateType(ReadableEnum):
+    HEADLINE = "HEADLINE"
+    SUMMARY = "SUMMARY"
+    SKILL = "SKILL"
+    EXPERIENCE = "EXPERIENCE"
+    PROJECT = "PROJECT"
+    EDUCATION = "EDUCATION"
+    LANGUAGE = "LANGUAGE"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class ResumeImportDecision(ReadableEnum):
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    EDITED = "EDITED"
+    REMOVED = "REMOVED"
+
+
+class ResumeImportConfidenceLabel(ReadableEnum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
 class ApplicationGuardDecision(ReadableEnum):
     ALLOW_PREPARATION = "ALLOW_PREPARATION"
     TRACK_ONLY = "TRACK_ONLY"

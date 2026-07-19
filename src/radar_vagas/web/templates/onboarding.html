@@ -8,10 +8,26 @@
     </div>
   </section>
 
+  <section class="resume-stepper" aria-label="Etapas iniciais">
+    <span class="active">1. Enviar curriculo</span>
+    <span>2. Revisar dados</span>
+    <span>3. Ativar perfil</span>
+  </section>
+
+  <form class="resume-upload-panel" action="/profile/resume/import" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="resume-dropzone" for="resume_file" tabindex="0">
+      <strong>Comecar pelo curriculo</strong>
+      <span>PDF textual, DOCX, TXT ou Markdown. Nada e aplicado antes da sua revisao.</span>
+      <input id="resume_file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
+    </label>
+    <button type="submit">Extrair para revisao</button>
+  </form>
+
   <section class="grid">
     <form class="card" action="/onboarding/profile/upload" method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <h2>Importar perfil</h2>
+      <h2>Importar perfil estruturado</h2>
       <div class="field">
         <label for="upload_timezone">Timezone local</label>
         <input id="upload_timezone" name="timezone" value="{{ ui.timezone }}">

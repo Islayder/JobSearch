@@ -35,6 +35,18 @@ hash/formato/origem sanitizada e descarta o conteudo original. A criacao manual
 na web usa `ProfessionalProfileInput` diretamente e nao cria JSON em
 `data/imports`.
 
+A web tambem oferece `Perfil > Importar curriculo` para PDF textual, DOCX, TXT
+ou Markdown. Esse fluxo nao ativa perfil imediatamente: ele cria
+`ResumeImportSession`, separa candidatos por resumo, experiencias, projetos,
+formacao, habilidades, idiomas, ambiguos e avisos, e exige que o usuario
+confirme ou edite os itens antes de criar uma nova versao.
+
+Itens aceitos recebem proveniencia opcional no JSON validado do perfil:
+formato de origem, pagina quando disponivel, bloco, trecho curto, confianca e
+explicacao. Essa proveniencia nao muda as tabelas estruturadas de habilidade,
+experiencia, projeto, formacao ou idioma; ela fica no `raw_profile_json` para
+auditoria da versao.
+
 No formulario manual, habilidades digitadas no textarea e habilidades em linhas
 estruturadas sao lidas em etapas separadas. Depois, o Radar faz merge por nome
 normalizado. Categoria, nivel e evidencia ficam vinculados somente a linha
@@ -51,6 +63,12 @@ registra auditoria local da troca.
 O `Resume` base e reutilizado por perfil. Novos arquivos ou conteudos geram
 novas `ResumeVersion`, sem criar uma entidade base duplicada para o mesmo
 perfil e sem copiar o curriculo real para o repositorio.
+
+Importacoes revisadas confirmadas tambem criam ou reutilizam o `Resume` base do
+perfil, registrando a origem como `Curriculo PDF`, `Curriculo DOCX`,
+`Curriculo TXT` ou `Curriculo Markdown`. Rascunhos descartados ou pendentes nao
+criam `ProfessionalProfileVersion`, `ResumeVersion`, candidatura, evento de
+agenda ou comparacao.
 
 ## Evidencias
 

@@ -15,9 +15,11 @@ duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 - consultas publicas Gupy em modo `public_portal`.
 - historico local de candidaturas em JSON/CSV;
 - perfil profissional/curriculo local em YAML, JSON ou TXT estruturado;
+- curriculo PDF textual, DOCX, TXT ou Markdown importado pela web com revisao
+  humana obrigatoria;
 - agenda local registrada manualmente ou derivada de dados locais.
 
-Nao ha crawling recursivo, IA, Gmail, geracao automatica de curriculo,
+Nao ha crawling recursivo, IA, OCR, Gmail, geracao automatica de curriculo,
 Google Calendar, preenchimento de formularios, candidatura automatica ou
 interface publica.
 
@@ -96,6 +98,12 @@ habilidades com evidencias, experiencias, projetos, formacao e idiomas. A
 comparacao vaga-curriculo preserva a versao usada na analise e diferencia
 `MATCHED`, `PARTIAL`, `NOT_PROVEN`, `NOT_MATCHED` e `AMBIGUOUS`, separando
 requisitos obrigatorios de desejaveis.
+
+A web pode extrair candidatos de curriculos PDF/DOCX/TXT/Markdown, mas nao cria
+perfil automaticamente. Cada candidato fica em revisao com origem, trecho curto,
+confianca e explicacao; apenas itens confirmados ou editados pelo usuario entram
+na versao final. O arquivo bruto e o texto integral extraido nao sao
+persistidos.
 
 Habilidade declarada sem evidencia nao comprova dominio. Nivel declarado sem
 evidencia tambem nao gera `MATCHED`. A web deve permitir criacao manual completa

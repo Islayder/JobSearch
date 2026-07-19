@@ -122,11 +122,29 @@ KNOWN_COURSE_TERMS = {
 }
 
 
+class SourceProvenanceInput(BaseModel):
+    source_type: str
+    source_format: str | None = None
+    page_number: int | None = None
+    section: str | None = None
+    block_ids: list[str] = Field(default_factory=list)
+    excerpt: str | None = None
+    confidence_score: float | None = None
+    confidence_label: str | None = None
+    extraction_explanation: str | None = None
+
+    @field_validator("source_type")
+    @classmethod
+    def require_source_type(cls, value: str) -> str:
+        return _required_text(value, "provenance.source_type")
+
+
 class EvidenceInput(BaseModel):
     title: str
     description: str | None = None
     source_ref: str | None = None
     evidence_type: ProfileEvidenceType = ProfileEvidenceType.SKILL
+    provenance: SourceProvenanceInput | None = None
 
     @field_validator("title")
     @classmethod
@@ -139,6 +157,7 @@ class SkillInput(BaseModel):
     category: str | None = None
     level: str | None = None
     evidence: list[EvidenceInput] = Field(default_factory=list)
+    provenance: SourceProvenanceInput | None = None
 
     @field_validator("name")
     @classmethod
@@ -153,6 +172,7 @@ class ExperienceInput(BaseModel):
     end_date: str | None = None
     description: str | None = None
     skills: list[str] = Field(default_factory=list)
+    provenance: SourceProvenanceInput | None = None
 
     @field_validator("title")
     @classmethod
@@ -165,6 +185,7 @@ class ProjectInput(BaseModel):
     description: str | None = None
     technologies: list[str] = Field(default_factory=list)
     source_ref: str | None = None
+    provenance: SourceProvenanceInput | None = None
 
     @field_validator("name")
     @classmethod
@@ -178,6 +199,7 @@ class EducationInput(BaseModel):
     status: str | None = None
     start_date: str | None = None
     end_date: str | None = None
+    provenance: SourceProvenanceInput | None = None
 
     @field_validator("institution", "course")
     @classmethod
@@ -189,6 +211,7 @@ class LanguageInput(BaseModel):
     name: str
     level: str
     evidence: list[str] = Field(default_factory=list)
+    provenance: SourceProvenanceInput | None = None
 
     @field_validator("name", "level")
     @classmethod
@@ -336,6 +359,8 @@ def create_professional_profile(
     profile_name: str | None = None,
     activate: bool = True,
     source_label: str = "manual:web",
+    source_format: str = "manual",
+    activation_source: str = "manual_profile",
 ) -> ProfileImportResult:
     raw_bytes = json.dumps(
         document.model_dump(mode="json"),
@@ -347,10 +372,10 @@ def create_professional_profile(
         document,
         content_hash=sha256(raw_bytes).hexdigest(),
         source_path=source_label,
-        source_format="manual",
+        source_format=source_format,
         profile_name=profile_name,
         activate=activate,
-        activation_source="manual_profile",
+        activation_source=activation_source,
     )
 
 

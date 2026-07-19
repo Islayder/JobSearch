@@ -55,7 +55,8 @@ A tela de perfil permite ajustar configuracoes basicas sem editar YAML.
 - Dashboard: fila de revisao, compromissos, candidaturas aguardando retorno,
   testes/cases, entrevistas, ofertas, vagas recentes, saude de fontes e atalhos.
 - Onboarding: privacidade, timezone, importacao YAML/JSON/TXT, criacao manual,
-  revisao do perfil, ativacao e comparacao inicial de vagas.
+  importacao revisada de curriculo PDF/DOCX/TXT/Markdown, revisao do perfil,
+  ativacao e comparacao inicial de vagas.
 - Vagas: busca textual, filtros, abas, paginacao, detalhe, favoritar,
   descartar, restaurar, registrar candidatura manual e criar evento.
 - Candidaturas: lista filtravel por empresa, status, etapa, plataforma,
@@ -65,8 +66,8 @@ A tela de perfil permite ajustar configuracoes basicas sem editar YAML.
   filtros por tipo/origem/status/vaga/candidatura, mes em portugues sem depender
   do locale do sistema, lista limitada ao mes selecionado, itens sem data e
   transicoes de confirmar, dispensar, concluir e cancelar.
-- Perfil: perfil ativo, versoes, importacao, criacao manual, ativacao e
-  comparacao em lote.
+- Perfil: perfil ativo, versoes, importacao revisada de curriculo, rascunhos,
+  importacao estruturada, criacao manual, ativacao e comparacao em lote.
 - Fontes: saude de boards, consultas e execucoes recentes, com acao manual de
   coleta em segundo plano. Itens ignorados geram aviso, mas nao sao apresentados
   automaticamente como execucao parcial.
@@ -86,6 +87,17 @@ conteudo em blocos ate o limite permitido, valida extensao/UTF-8/conteudo e
 envia os bytes ao servico de perfil. Apenas formato, hash e origem sanitizada
 podem ficar registrados. O fluxo manual cria `ProfessionalProfileInput`
 diretamente, sem JSON temporario em `data/imports`.
+
+O fluxo revisado de curriculo aceita PDF textual, DOCX, TXT e Markdown com
+limite de 8 MB. PDF protegido, PDF sem texto, `.doc` antigo, `.docm`, DOCX com
+macros, referencias externas ou estrutura abusiva sao rejeitados com mensagem
+humana. Nao ha OCR, servico externo, Word, LibreOffice ou Playwright.
+
+Rascunhos de curriculo ficam em `/profile/resume/imports`. A tela de revisao
+mostra candidatos por secao, confianca, explicacao, origem, trecho curto e
+estado. O usuario pode salvar edicoes, confirmar, remover ou restaurar cada
+item. A confirmacao final oferece "Ativar agora" e "Analisar vagas depois";
+nenhuma comparacao roda se a segunda opcao nao for marcada.
 
 Habilidade digitada sem evidencia explicita e tratada como declarada, nao como
 comprovada. Textarea e linhas estruturadas sao interpretados separadamente e

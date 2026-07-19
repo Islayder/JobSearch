@@ -4,7 +4,8 @@ Radar de Vagas e uma aplicacao local em Python para encontrar, organizar,
 deduplicar, avaliar e acompanhar oportunidades profissionais compativeis com um
 unico usuario. A versao atual trabalha com fixtures, arquivos locais JSON/CSV,
 coletores publicos de vagas, revisao manual e acompanhamento local de
-candidaturas.
+candidaturas. A interface web tambem importa curriculos PDF/DOCX/TXT/Markdown
+para revisao humana antes de criar um perfil profissional.
 
 Nao ha IA, Gmail, Google Calendar, geracao automatica de curriculo,
 preenchimento de formularios ou candidatura automatica nesta etapa.
@@ -45,6 +46,8 @@ radar web
 
 A URL padrao e `http://127.0.0.1:8000`. Use `radar web --no-open-browser`
 quando quiser iniciar sem abrir o navegador.
+O extra `web` inclui os leitores locais de PDF textual e DOCX usados pelo
+importador revisado de curriculo.
 
 ## Fluxo Local
 
@@ -121,6 +124,11 @@ radar compare-profile 1
 radar show-compatibility 1
 ```
 
+Pela interface web, use `Perfil > Importar curriculo` para enviar PDF textual,
+DOCX, TXT ou Markdown. O Radar cria um rascunho revisavel, mostra candidatos por
+secao, permite editar/remover/restaurar itens e so cria uma nova versao de
+perfil depois da confirmacao humana.
+
 Revise vagas e acompanhe candidaturas feitas manualmente fora do sistema:
 
 ```powershell
@@ -175,6 +183,9 @@ vaga; analises antigas permanecem no historico do detalhe. A tela de fontes
 inicia coletas manuais em segundo plano, uma por vez, mostra itens ignorados sem
 chamar isso automaticamente de execucao parcial e exibe somente mensagens
 sanitizadas.
+O importador revisado de curriculo segue a mesma politica local: rejeita PDF
+protegido ou sem texto, `.doc` antigo, `.docm`, DOCX com macros ou referencias
+externas, e nao persiste bytes brutos nem texto integral extraido.
 
 ## Marco 4.1
 
@@ -253,6 +264,7 @@ ignorados.
 - `docs/gupy-collector.md`
 - `docs/review-workflow.md`
 - `docs/professional-profile.md`
+- `docs/resume-import.md`
 - `docs/application-tracking.md`
 - `docs/application-history-import.md`
 - `docs/calendar.md`
@@ -268,8 +280,8 @@ JobPosting, Greenhouse, Lever e Gupy Public Portal, deduplicacao deterministica,
 avaliacao de elegibilidade, relevancia profissional, ranking explicavel,
 auditoria de importacao/coleta, fila de revisao, acompanhamento manual de
 candidaturas, importacao de historico local, perfil profissional versionado,
-comparacao explicavel entre vaga e curriculo, agenda local e interface web
-local.
+importacao revisada de curriculo PDF/DOCX/TXT/Markdown, comparacao explicavel
+entre vaga e curriculo, agenda local e interface web local.
 Boards persistidos sao isolados por escopo estavel de coletor e key/token/URL;
 o nome da empresa e apenas informacao auxiliar de exibicao.
 

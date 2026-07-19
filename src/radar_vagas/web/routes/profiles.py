@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
@@ -11,8 +11,14 @@ from radar_vagas.canonicalization.normalize import normalize_text
 from radar_vagas.config.loaders import load_ui_config, write_ui_local_config
 from radar_vagas.config.schemas import UiConfig
 from radar_vagas.config.settings import Settings
-from radar_vagas.domain.enums import ProfileEvidenceType, parse_enum_value
+from radar_vagas.domain.enums import (
+    ProfileEvidenceType,
+    ResumeImportCandidateType,
+    ResumeImportDecision,
+    parse_enum_value,
+)
 from radar_vagas.domain.errors import RadarError
+from radar_vagas.persistence.models import ResumeImportCandidate, ResumeImportSession
 from radar_vagas.profile.service import (
     EducationInput,
     EvidenceInput,
@@ -26,6 +32,20 @@ from radar_vagas.profile.service import (
     create_professional_profile,
     import_professional_profile_bytes,
 )
+from radar_vagas.resume_import.repository import candidate_for_session, json_load
+from radar_vagas.resume_import.service import (
+    accept_candidate,
+    confirm_import,
+    create_import_session,
+    discard_import,
+    get_import_session,
+    list_import_sessions,
+    purge_import,
+    remove_candidate,
+    restore_candidate,
+    update_candidate,
+    update_import_header,
+)
 from radar_vagas.web.dependencies import get_session, get_settings
 from radar_vagas.web.queries import active_profile_version, profile_versions
 from radar_vagas.web.routes.common import redirect, render
@@ -34,9 +54,11 @@ from radar_vagas.web.security import (
     form_value,
     positive_id,
     read_limited_profile_upload,
+    read_limited_resume_upload,
 )
 
 router = APIRouter()
+UPLOAD_FILE = File(...)
 
 
 @router.get("/onboarding", response_class=HTMLResponse)
@@ -89,13 +111,11 @@ async def onboarding_upload_profile(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, UPLOAD_FILE],
     _csrf: Annotated[None, Depends(csrf_protect)] = None,
-    file: Annotated[UploadFile, File()] | None = None,
     timezone: Annotated[str, Form()] = "America/Sao_Paulo",
 ) -> RedirectResponse:
     _ = request, _csrf
-    if file is None:
-        raise HTTPException(status_code=400, detail="Arquivo nao enviado.")
     content = await read_limited_profile_upload(file)
     imported = import_professional_profile_bytes(
         session,
@@ -153,12 +173,10 @@ def profile_config(
 async def profile_import(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, UPLOAD_FILE],
     _csrf: Annotated[None, Depends(csrf_protect)] = None,
-    file: Annotated[UploadFile, File()] | None = None,
 ) -> RedirectResponse:
     _ = request, _csrf
-    if file is None:
-        raise HTTPException(status_code=400, detail="Arquivo nao enviado.")
     content = await read_limited_profile_upload(file)
     imported = import_professional_profile_bytes(
         session,
@@ -167,6 +185,331 @@ async def profile_import(
         activate=True,
     )
     return redirect("/profile", message=f"Perfil {imported.profile_name} importado.")
+
+
+@router.get("/profile/resume/import", response_class=HTMLResponse)
+def resume_import(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+) -> HTMLResponse:
+    return render(
+        request,
+        "resume_import_upload.html",
+        {
+            "imports": list_import_sessions(session, limit=5),
+            "resume_error": None,
+        },
+    )
+
+
+@router.post("/profile/resume/import")
+async def resume_import_create(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, UPLOAD_FILE],
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+) -> Response:
+    _ = _csrf
+    try:
+        content = await read_limited_resume_upload(file)
+        result = create_import_session(
+            session,
+            filename=file.filename or "curriculo.txt",
+            content=content,
+        )
+    except RadarError as exc:
+        return render(
+            request,
+            "resume_import_upload.html",
+            {"imports": list_import_sessions(session, limit=5), "resume_error": str(exc)},
+            status_code=400,
+        )
+    return redirect(
+        f"/profile/resume/imports/{result.import_key}/review",
+        message=f"{result.candidate_count} itens extraidos para revisao.",
+    )
+
+
+@router.get("/profile/resume/imports", response_class=HTMLResponse)
+def resume_imports(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+) -> HTMLResponse:
+    return render(
+        request,
+        "resume_import_list.html",
+        {"imports": list_import_sessions(session, limit=50)},
+    )
+
+
+@router.get("/profile/resume/imports/{import_key}/review", response_class=HTMLResponse)
+def resume_import_review(
+    request: Request,
+    import_key: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> HTMLResponse:
+    import_session = get_import_session(session, import_key)
+    return render(
+        request,
+        "resume_import_review.html",
+        _resume_review_context(import_session),
+    )
+
+
+@router.post("/profile/resume/imports/{import_key}/header")
+async def resume_import_header(
+    request: Request,
+    import_key: str,
+    session: Annotated[Session, Depends(get_session)],
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+    profile_name: Annotated[str, Form()] = "",
+    headline: Annotated[str, Form()] = "",
+    summary: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    _ = request, _csrf
+    update_import_header(
+        session,
+        import_key,
+        profile_name=profile_name,
+        headline=headline,
+        summary=summary,
+    )
+    return redirect(
+        f"/profile/resume/imports/{import_key}/review",
+        message="Cabecalho salvo.",
+    )
+
+
+@router.post("/profile/resume/imports/{import_key}/candidates/{candidate_id}")
+async def resume_import_candidate(
+    request: Request,
+    import_key: str,
+    candidate_id: int,
+    session: Annotated[Session, Depends(get_session)],
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+) -> RedirectResponse:
+    _ = _csrf
+    form = await request.form()
+    import_session = get_import_session(session, import_key)
+    candidate = candidate_for_session(import_session, positive_id(candidate_id, "item"))
+    action = form_value(form.get("action")) or "save"
+    if action == "accept":
+        accept_candidate(session, import_key, candidate.id)
+        message = "Item confirmado."
+    elif action == "remove":
+        remove_candidate(session, import_key, candidate.id)
+        message = "Item removido da importacao."
+    elif action == "restore":
+        restore_candidate(session, import_key, candidate.id)
+        message = "Item restaurado."
+    elif action == "save_accept":
+        update_candidate(
+            session,
+            import_key,
+            candidate.id,
+            _candidate_payload_from_form(candidate, form),
+        )
+        accept_candidate(session, import_key, candidate.id)
+        message = "Item salvo e confirmado."
+    else:
+        update_candidate(
+            session,
+            import_key,
+            candidate.id,
+            _candidate_payload_from_form(candidate, form),
+        )
+        message = "Item salvo."
+    return redirect(
+        f"/profile/resume/imports/{import_key}/review#candidate-{candidate.id}",
+        message=message,
+    )
+
+
+@router.post("/profile/resume/imports/{import_key}/confirm")
+def resume_import_confirm(
+    request: Request,
+    import_key: str,
+    session: Annotated[Session, Depends(get_session)],
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+    activate_now: Annotated[str, Form()] = "",
+    analyze_after_confirm: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    _ = request, _csrf
+    result = confirm_import(
+        session,
+        import_key,
+        activate_now=activate_now == "on",
+        analyze_jobs_after_confirm=analyze_after_confirm == "on",
+    )
+    message = (
+        f"Perfil {result.profile.profile_name} criado a partir do curriculo."
+        if result.profile.created_version
+        else f"Perfil {result.profile.profile_name} reutilizado a partir do curriculo."
+    )
+    if result.comparisons_created or result.comparisons_reused or result.comparisons_failed:
+        message = (
+            f"{message} Analise: {result.comparisons_created} criadas, "
+            f"{result.comparisons_reused} reutilizadas, {result.comparisons_failed} falhas."
+        )
+    return redirect("/profile", message=message)
+
+
+@router.post("/profile/resume/imports/{import_key}/discard")
+def resume_import_discard(
+    request: Request,
+    import_key: str,
+    session: Annotated[Session, Depends(get_session)],
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+) -> RedirectResponse:
+    _ = request, _csrf
+    discard_import(session, import_key)
+    return redirect("/profile/resume/imports", message="Importacao descartada.")
+
+
+@router.post("/profile/resume/imports/{import_key}/purge")
+def resume_import_purge(
+    request: Request,
+    import_key: str,
+    session: Annotated[Session, Depends(get_session)],
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+) -> RedirectResponse:
+    _ = request, _csrf
+    purge_import(session, import_key)
+    return redirect("/profile/resume/imports", message="Rascunho removido.")
+
+
+RESUME_SECTION_ORDER = (
+    ("summary", "Resumo"),
+    ("experiences", "Experiencias"),
+    ("projects", "Projetos"),
+    ("education", "Formacao"),
+    ("skills", "Habilidades"),
+    ("languages", "Idiomas"),
+    ("ambiguous", "Ambiguos"),
+    ("warnings", "Avisos"),
+)
+RESUME_CANDIDATE_SECTIONS = {
+    ResumeImportCandidateType.HEADLINE: "summary",
+    ResumeImportCandidateType.SUMMARY: "summary",
+    ResumeImportCandidateType.EXPERIENCE: "experiences",
+    ResumeImportCandidateType.PROJECT: "projects",
+    ResumeImportCandidateType.EDUCATION: "education",
+    ResumeImportCandidateType.SKILL: "skills",
+    ResumeImportCandidateType.LANGUAGE: "languages",
+    ResumeImportCandidateType.AMBIGUOUS: "ambiguous",
+}
+RESUME_CANDIDATE_LABELS = {
+    ResumeImportCandidateType.HEADLINE: "Titulo",
+    ResumeImportCandidateType.SUMMARY: "Resumo",
+    ResumeImportCandidateType.SKILL: "Habilidade",
+    ResumeImportCandidateType.EXPERIENCE: "Experiencia",
+    ResumeImportCandidateType.PROJECT: "Projeto",
+    ResumeImportCandidateType.EDUCATION: "Formacao",
+    ResumeImportCandidateType.LANGUAGE: "Idioma",
+    ResumeImportCandidateType.AMBIGUOUS: "Ambiguo",
+}
+RESUME_DECISION_LABELS = {
+    ResumeImportDecision.PENDING: "Pendente",
+    ResumeImportDecision.ACCEPTED: "Confirmado",
+    ResumeImportDecision.EDITED: "Editado",
+    ResumeImportDecision.REMOVED: "Removido",
+}
+
+
+def _resume_review_context(import_session: ResumeImportSession) -> dict[str, object]:
+    grouped: dict[str, list[dict[str, object]]] = {key: [] for key, _label in RESUME_SECTION_ORDER}
+    counts = {decision: 0 for decision in ResumeImportDecision}
+    for candidate in import_session.candidates:
+        counts[candidate.decision] += 1
+        section = RESUME_CANDIDATE_SECTIONS[candidate.candidate_type]
+        grouped[section].append(_candidate_row(candidate))
+    warnings = json_load(import_session.warnings_json) or []
+    return {
+        "import_session": import_session,
+        "grouped_candidates": grouped,
+        "section_order": RESUME_SECTION_ORDER,
+        "decision_counts": counts,
+        "decision_summary": {decision.value.lower(): total for decision, total in counts.items()},
+        "decision_labels": RESUME_DECISION_LABELS,
+        "candidate_labels": RESUME_CANDIDATE_LABELS,
+        "warnings": warnings,
+        "reviewable": import_session.status.value == "REVIEWING",
+    }
+
+
+def _candidate_row(candidate: ResumeImportCandidate) -> dict[str, object]:
+    payload = (
+        json_load(candidate.reviewed_payload_json)
+        or json_load(candidate.original_payload_json)
+        or {}
+    )
+    original_payload = json_load(candidate.original_payload_json) or {}
+    return {
+        "candidate": candidate,
+        "payload": payload,
+        "original_payload": original_payload,
+        "label": RESUME_CANDIDATE_LABELS[candidate.candidate_type],
+    }
+
+
+def _candidate_payload_from_form(
+    candidate: ResumeImportCandidate,
+    form: FormData,
+) -> dict[str, object]:
+    if candidate.candidate_type == ResumeImportCandidateType.HEADLINE:
+        return {"headline": form_value(form.get("headline"))}
+    if candidate.candidate_type == ResumeImportCandidateType.SUMMARY:
+        return {"summary": form_value(form.get("summary"))}
+    if candidate.candidate_type == ResumeImportCandidateType.SKILL:
+        evidence = []
+        evidence_title = form_value(form.get("evidence_title"))
+        if evidence_title:
+            evidence.append(
+                {
+                    "title": evidence_title,
+                    "description": form_value(form.get("evidence_description")),
+                    "source_ref": form_value(form.get("evidence_source_ref")),
+                    "evidence_type": form_value(form.get("evidence_type"))
+                    or ProfileEvidenceType.RESUME.value,
+                }
+            )
+        return {
+            "name": form_value(form.get("name")),
+            "category": form_value(form.get("category")),
+            "level": form_value(form.get("level")),
+            "evidence": evidence,
+        }
+    if candidate.candidate_type == ResumeImportCandidateType.EXPERIENCE:
+        return {
+            "title": form_value(form.get("title")),
+            "organization": form_value(form.get("organization")),
+            "start_date": form_value(form.get("start_date")),
+            "end_date": form_value(form.get("end_date")),
+            "description": form_value(form.get("description")),
+            "skills": _split_lines(str(form.get("skills") or "")),
+        }
+    if candidate.candidate_type == ResumeImportCandidateType.PROJECT:
+        return {
+            "name": form_value(form.get("name")),
+            "description": form_value(form.get("description")),
+            "technologies": _split_lines(str(form.get("technologies") or "")),
+            "source_ref": form_value(form.get("source_ref")),
+        }
+    if candidate.candidate_type == ResumeImportCandidateType.EDUCATION:
+        return {
+            "institution": form_value(form.get("institution")),
+            "course": form_value(form.get("course")),
+            "status": form_value(form.get("status")),
+            "start_date": form_value(form.get("start_date")),
+            "end_date": form_value(form.get("end_date")),
+        }
+    if candidate.candidate_type == ResumeImportCandidateType.LANGUAGE:
+        return {
+            "name": form_value(form.get("name")),
+            "level": form_value(form.get("level")),
+            "evidence": _split_lines(str(form.get("evidence") or "")),
+        }
+    return {"text": form_value(form.get("text"))}
 
 
 @router.post("/profile/manual")

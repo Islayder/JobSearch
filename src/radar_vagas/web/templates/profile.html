@@ -41,6 +41,15 @@
   </section>
 
   <section class="grid">
+    <section class="card">
+      <h2>Importar curriculo com revisao</h2>
+      <p>Use PDF, DOCX, TXT ou Markdown para gerar um rascunho editavel antes de criar uma nova versao de perfil.</p>
+      <div class="toolbar">
+        <a class="button" href="/profile/resume/import">Importar curriculo</a>
+        <a class="button secondary" href="/profile/resume/imports">Ver rascunhos</a>
+      </div>
+    </section>
+
     <form class="card" action="/profile/config" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <h2>Configuracao local</h2>
@@ -74,7 +83,7 @@
     </form>
 
     <section class="card">
-      <h2>Importar arquivo</h2>
+      <h2>Importar perfil estruturado</h2>
       <form class="toolbar" action="/profile/import" method="post" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="field">

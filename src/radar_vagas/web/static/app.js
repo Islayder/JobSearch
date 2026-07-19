@@ -6,7 +6,30 @@ document.addEventListener("submit", function (event) {
   const message = form.dataset.confirm;
   if (message && !window.confirm(message)) {
     event.preventDefault();
+    return;
   }
+  if (form.classList.contains("resume-upload-panel")) {
+    form.classList.add("is-loading");
+    form.querySelectorAll("button[type='submit']").forEach(function (button) {
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = true;
+        button.textContent = "Extraindo...";
+      }
+    });
+  }
+});
+
+document.querySelectorAll(".resume-dropzone input[type='file']").forEach(function (input) {
+  input.addEventListener("change", function () {
+    if (!(input instanceof HTMLInputElement) || !input.files || input.files.length === 0) {
+      return;
+    }
+    const dropzone = input.closest(".resume-dropzone");
+    const label = dropzone && dropzone.querySelector("span");
+    if (label) {
+      label.textContent = input.files[0].name;
+    }
+  });
 });
 
 document.addEventListener("click", function (event) {
