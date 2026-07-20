@@ -22,6 +22,8 @@ SQLite como banco e separa camadas por responsabilidade:
 - Agenda local: prazos, entrevistas, testes e follow-ups sem calendario externo.
 - Inteligencia de empresas: perfil local, fatos por origem, relatos informativos
   e preparacao deterministica de entrevista.
+- Gmail somente leitura: sincronizacao local opcional de mensagens relacionadas
+  a candidaturas, com sugestoes revisaveis.
 - Interface web local: FastAPI, Jinja2 e HTML/CSS server-side para operar o
   mesmo banco local pelo navegador.
 - Importacao revisada de curriculo: extracao local de PDF/DOCX/TXT/Markdown,
@@ -45,6 +47,8 @@ flowchart LR
     F --> CI["Empresa e entrevista"]
     P --> CI
     CI --> W
+    GM["Gmail readonly opcional"] --> F
+    GM --> W
     R --> V
     V --> A["Agenda local"]
     V --> I["CLI"]
@@ -62,8 +66,9 @@ PyYAML, httpx, beautifulsoup4, pytest, Ruff e mypy. A interface web e extra
 opcional e usa FastAPI, Uvicorn, Jinja2, python-multipart, itsdangerous, pypdf
 e python-docx. Os leitores de PDF/DOCX sao importados de forma preguiçosa no
 modulo de curriculo; a CLI e o nucleo continuam funcionando sem instalar o
-extra `web`. Nao ha Django, Flask, Streamlit, PostgreSQL, Redis, Celery ou
-Docker obrigatorio.
+extra `web`. A integracao real com Gmail fica no extra opcional `gmail` e usa
+somente cliente Google com escopo `gmail.readonly`. Nao ha Django, Flask,
+Streamlit, PostgreSQL, Redis, Celery ou Docker obrigatorio.
 
 ## Fluxo
 
@@ -93,11 +98,15 @@ Docker obrigatorio.
 13. O detalhe da vaga permite manter informacoes locais de empresa e gerar
    preparacao de entrevista baseada na vaga, perfil ativo, comparacao atual e
    fontes registradas, sem scraping autenticado e sem alterar candidaturas.
-14. `radar agenda` e comandos `*-agenda-event` cuidam da agenda local, sem
-   Google Calendar, notificacoes ou leitura de e-mail.
-15. `radar web` inicia uma interface local em `127.0.0.1`, aplica migracoes
+14. A tela `/gmail` sincroniza mensagens por cliente somente leitura quando a
+   configuracao local esta ativada. Ela salva sugestoes para revisao e nao
+   envia, apaga, arquiva, marca como lida, cria candidatura, muda status ou
+   cria evento.
+15. `radar agenda` e comandos `*-agenda-event` cuidam da agenda local, sem
+   Google Calendar ou notificacoes externas.
+16. `radar web` inicia uma interface local em `127.0.0.1`, aplica migracoes
    antes de servir paginas e reutiliza os mesmos servicos de dominio da CLI.
-16. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
+17. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
    `radar show-job`, `radar stats`, `radar boards` e `radar source-health`
    consultam ou atualizam o banco.
 
@@ -114,6 +123,11 @@ empresa e a preparacao de entrevista. Ele nao possui cliente HTTP proprio, nao
 usa sessao autenticada e nao cria eventos ou candidaturas automaticamente. Toda
 afirmacao e mantida com origem explicita: informacao oficial, relato de
 funcionarios, inferencia do Radar ou anotacao do usuario.
+
+O modulo `radar_vagas.gmail_insights` define um protocolo de cliente somente
+leitura, um adaptador opcional para Gmail API e um classificador deterministico
+de mensagens de candidatura. O modulo grava `EmailMessage` e sugestoes em JSON,
+mas nao chama servicos de alteracao de candidatura, agenda ou caixa postal.
 
 O fluxo de importacao revisada de curriculo fica em `radar_vagas.resume_import`.
 Ele separa seguranca de arquivo, extracao por formato, atribuicao de secoes,
@@ -163,7 +177,7 @@ fecha publicacoes. Snapshots parciais por truncamento, itens invalidos ou HTTP
 - LinkedIn, Indeed, Glassdoor, Solides e Pandape.
 - Geracao de curriculo.
 - OCR de PDF escaneado.
-- Gmail.
+- Escrita no Gmail.
 - Google Calendar.
 - Interpretacao semantica ampla ou IA.
 - Playwright.

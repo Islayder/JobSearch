@@ -1,0 +1,7 @@
+enabled: false
+query: '("candidatura" OR "processo seletivo" OR "entrevista" OR "teste" OR "case" OR "oferta" OR "rejeicao") newer_than:90d'
+max_results: 25
+credentials_path: null
+token_path: null
+scopes:
+  - https://www.googleapis.com/auth/gmail.readonly

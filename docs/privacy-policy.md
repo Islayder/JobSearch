@@ -15,12 +15,14 @@ O `.gitignore` cobre:
 - `data/imports/`;
 - `data/exports/`;
 - `data/personal/`;
+- `data/gmail/`;
 - `data/resumes/`;
 - `data/curricula/`;
 - `data/backups/`;
 - `config/profile.local.yaml`;
 - `config/professional_profile.local.yaml`;
 - `config/ui.local.yaml`;
+- `config/gmail.local.yaml`;
 - demais `config/*.local.yaml` sensiveis;
 - credenciais e tokens locais.
 
@@ -56,7 +58,7 @@ devem ser usadas como habilidade, experiencia ou evidencia.
 ## Agenda
 
 Eventos de agenda sao locais. O Radar nao cria eventos em Google Calendar, nao
-le Gmail, nao envia notificacoes externas e nao abre sessoes autenticadas.
+envia notificacoes externas e nao abre sessoes autenticadas para calendario.
 
 `meeting_url` e armazenada somente quando informada manualmente ou importada de
 fonte local autorizada. A validacao aceita apenas HTTP/HTTPS e rejeita URLs com
@@ -65,6 +67,19 @@ validacao nao faz consulta de rede.
 
 Notas da agenda e das candidaturas podem conter contexto pessoal. Elas ficam no
 banco SQLite local e nos relatorios locais ignorados pelo Git.
+
+## Gmail
+
+O Gmail e opcional, local, desativado por padrao e limitado ao escopo
+`gmail.readonly`. Credenciais e tokens devem ficar fora do Git, em
+`data/personal/gmail/` ou fora do diretorio do projeto. Eles nunca devem ser
+versionados, registrados em logs, fixtures ou documentacao com valores reais.
+
+Mensagens lidas do Gmail podem conter dados pessoais. O banco local guarda
+assunto, remetente, data, um trecho limitado do corpo necessario para revisao,
+vinculos locais e sugestoes em JSON. A sincronizacao nao envia, responde,
+encaminha, apaga, arquiva, marca como lida, altera labels, cria candidatura,
+muda status ou cria evento automaticamente.
 
 ## Interface Web Local
 

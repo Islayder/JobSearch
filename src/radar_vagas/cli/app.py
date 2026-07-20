@@ -75,6 +75,7 @@ from radar_vagas.config.loaders import (
     load_blocked_companies,
     load_company_boards,
     load_eligibility_rules,
+    load_gmail_config,
     load_network_config,
     load_profile,
     load_ranking_weights,
@@ -3441,7 +3442,7 @@ def _check_migrations(settings: Settings) -> tuple[str, str, str]:
             version = session.execute(text("select version_num from alembic_version")).scalar()
     except Exception as exc:
         return "AVISO", "Migrações", f"não foi possível ler alembic_version: {exc}"
-    if version == "0013_company_intelligence_interviews":
+    if version == "0014_gmail_read_only_insights":
         return "OK", "Migrações", version
     return "AVISO", "Migrações", f"versão atual: {version}"
 
@@ -3456,6 +3457,10 @@ def _check_yaml_configs(settings: Settings) -> list[tuple[str, str, str]]:
         ("Rede", lambda: load_network_config(settings.config_dir).http.user_agent),
         ("Boards", lambda: str(len(load_company_boards(settings.config_dir).boards))),
         ("Consultas", lambda: str(len(load_search_queries(settings.config_dir).queries))),
+        (
+            "Gmail",
+            lambda: "ativado" if load_gmail_config(settings.config_dir).enabled else "desativado",
+        ),
         (
             "Empresas bloqueadas",
             lambda: str(len(load_blocked_companies(settings.config_dir).all_companies)),

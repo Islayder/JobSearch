@@ -1,7 +1,8 @@
 # Agenda Local
 
 A agenda local registra prazos, entrevistas, testes, cases e follow-ups sem
-integrar Google Calendar, Gmail ou notificacoes externas.
+integrar Google Calendar ou notificacoes externas. Mensagens do Gmail somente
+leitura podem sugerir eventos, mas nunca criam compromissos automaticamente.
 
 ## Entidades
 

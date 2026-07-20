@@ -83,6 +83,9 @@ A tela de perfil permite ajustar configuracoes basicas sem editar YAML.
 - Fontes: saude de boards, consultas e execucoes recentes, com acao manual de
   coleta em segundo plano. Itens ignorados geram aviso, mas nao sao apresentados
   automaticamente como execucao parcial.
+- Gmail: leitura local opcional de mensagens relacionadas a candidaturas,
+  status desconectado por padrao, sincronizacao por POST com CSRF e sugestoes
+  exibidas para revisao humana.
 
 ## Seguranca Local
 
@@ -139,6 +142,13 @@ locais: vaga, empresa, perfil ativo e comparacao atual quando existir. Ela
 mantem fontes utilizadas em JSON, mostra `nao encontrado` quando faltar dado e
 nao inventa cultura, salarios, beneficios, tecnologias, perguntas realmente
 feitas pela empresa ou etapas do processo seletivo.
+
+A tela de Gmail fica em `/gmail`. Quando `config/gmail.local.yaml` nao esta
+ativado, ela mostra Gmail desconectado e nao le mensagens. Quando ativada, a
+sincronizacao usa apenas `gmail.readonly`, salva assunto, remetente, data,
+trecho limitado do corpo e sugestoes. A interface nao envia, responde,
+encaminha, apaga, arquiva, marca como lida, altera labels, cria candidatura,
+muda status ou cria evento automaticamente.
 
 ## Design e Assets
 

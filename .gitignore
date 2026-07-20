@@ -38,7 +38,9 @@ config/professional_profile.local.yaml
 config/company_boards.local.yaml
 config/search_queries.local.yaml
 config/ui.local.yaml
+config/gmail.local.yaml
 credentials*.json
 token*.json
+data/gmail/
 *.sqlite
 *.sqlite3

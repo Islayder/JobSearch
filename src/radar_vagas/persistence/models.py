@@ -1089,20 +1089,26 @@ class EmailMessage(Base):
     __tablename__ = "email_messages"
     __table_args__ = (
         UniqueConstraint("external_message_id", name="uq_email_messages_external_message_id"),
+        Index("ix_email_messages_provider", "provider"),
         Index("ix_email_messages_received_at", "received_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     external_message_id: Mapped[str] = mapped_column(String(255), nullable=False)
     thread_id: Mapped[str | None] = mapped_column(String(255))
+    provider: Mapped[str] = mapped_column(String(80), default="gmail", nullable=False)
     sender: Mapped[str] = mapped_column(String(255), nullable=False)
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    body_excerpt: Mapped[str | None] = mapped_column(Text)
     classified_event_type: Mapped[str | None] = mapped_column(String(120))
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)
     application_id: Mapped[int | None] = mapped_column(ForeignKey("applications.id"), index=True)
     classification_confidence: Mapped[float | None] = mapped_column(Float)
+    suggestion_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    source_query: Mapped[str | None] = mapped_column(String(500))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     company: Mapped[Company | None] = relationship(back_populates="email_messages")
     job: Mapped[Job | None] = relationship(back_populates="email_messages")

@@ -1,12 +1,15 @@
 import json
 import re
 from hashlib import sha256
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from radar_vagas.canonicalization.normalize import normalize_text
+
+GMAIL_READ_ONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 
 
 class EligibilityRulesConfig(BaseModel):
@@ -240,6 +243,34 @@ class UiConfig(BaseModel):
         if theme not in {"system", "light", "dark"}:
             raise ValueError("theme_preference deve ser system, light ou dark")
         return theme
+
+
+class GmailConfig(BaseModel):
+    enabled: bool = False
+    query: str = (
+        '("candidatura" OR "processo seletivo" OR "entrevista" OR "teste" '
+        'OR "case" OR "oferta" OR "rejeicao") newer_than:90d'
+    )
+    max_results: int = Field(default=25, ge=1, le=100)
+    credentials_path: Path | None = None
+    token_path: Path | None = None
+    scopes: list[str] = Field(default_factory=lambda: [GMAIL_READ_ONLY_SCOPE])
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, value: str) -> str:
+        query = value.strip()
+        if not query:
+            raise ValueError("query do Gmail nao pode ficar vazia")
+        return query
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, value: list[str]) -> list[str]:
+        scopes = [scope.strip() for scope in value if scope.strip()]
+        if scopes != [GMAIL_READ_ONLY_SCOPE]:
+            raise ValueError("Gmail aceita somente o escopo gmail.readonly")
+        return scopes
 
 
 class BoardConfig(BaseModel):

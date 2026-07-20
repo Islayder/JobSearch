@@ -61,6 +61,24 @@
           {% endfor %}
         </div>
       </section>
+
+      <section class="card">
+        <h2>Mensagens do Gmail</h2>
+        <div class="list">
+          {% for message in application.email_messages|sort(attribute="received_at", reverse=true) %}
+            <article class="row">
+              <div>
+                <strong>{{ message.subject or "Assunto nao encontrado" }}</strong>
+                <div class="muted">{{ message.sender or "remetente nao encontrado" }} · {{ message.received_at|datetime(ui.timezone) }}</div>
+                <p>{{ message.body_excerpt|preview(260) if message.body_excerpt else "corpo necessario nao encontrado" }}</p>
+                <span class="badge badge-warning">Sugestao exige revisao humana</span>
+              </div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhuma mensagem ligada.", "Mensagens lidas do Gmail aparecem aqui sem alterar candidatura ou agenda.", icon="mail") }}
+          {% endfor %}
+        </div>
+      </section>
     </div>
 
     <aside class="section-stack">

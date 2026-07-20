@@ -275,6 +275,7 @@ ignorados.
 - `docs/application-history-import.md`
 - `docs/calendar.md`
 - `docs/company-intelligence.md`
+- `docs/gmail-read-only.md`
 - `docs/web-interface.md`
 - `docs/design-system.md`
 - `docs/local-setup.md`

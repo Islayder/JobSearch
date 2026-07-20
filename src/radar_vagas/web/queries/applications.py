@@ -72,6 +72,7 @@ def applications_list(session: Session, *, filters: ApplicationFilters) -> list[
             selectinload(Application.job).selectinload(Job.company),
             selectinload(Application.events),
             selectinload(Application.career_events),
+            selectinload(Application.email_messages),
         )
         .order_by(Application.updated_at.desc(), Application.id.desc())
     )

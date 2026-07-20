@@ -4,7 +4,7 @@ import hashlib
 import re
 import socket
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from radar_vagas.applications.review import application_key_for_job
 from radar_vagas.canonicalization.normalize import normalize_company_name, normalize_title
+from radar_vagas.config.schemas import GMAIL_READ_ONLY_SCOPE
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
     ApplicationEventType,
@@ -34,13 +35,16 @@ from radar_vagas.domain.enums import (
     SourceRunStatus,
     WorkModel,
 )
+from radar_vagas.gmail_insights.types import GmailMessage
 from radar_vagas.persistence.database import session_scope
 from radar_vagas.persistence.migrations import run_migrations
 from radar_vagas.persistence.models import (
     Application,
+    ApplicationEvent,
     CareerEvent,
     Company,
     Decision,
+    EmailMessage,
     Job,
     JobProfileComparison,
     JobReviewState,
@@ -454,6 +458,103 @@ def test_web_applications_agenda_profile_and_sources(tmp_path: Path) -> None:
         assert event is not None
         assert event.confirmation_status is CareerEventConfirmationStatus.COMPLETED
         assert event.completed_at is not None
+
+
+def test_web_gmail_disconnected_does_not_fetch_messages(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+
+    with TestClient(create_app(settings)) as client:
+        page = client.get("/gmail")
+        assert page.status_code == 200
+        assert "Gmail desconectado" in page.text
+        assert "gmail.readonly" in page.text
+        token = _csrf(page.text)
+
+        synced = client.post(
+            "/gmail/sync",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert synced.status_code == 303
+
+    with session_scope(settings) as session:
+        assert session.scalar(select(func.count(EmailMessage.id))) == 0
+
+
+def test_web_gmail_fake_connected_stores_suggestions_without_auto_actions(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _write_gmail_config(settings)
+    with session_scope(settings) as session:
+        job = _create_job(
+            session,
+            title="Estagio Gmail Dados",
+            provider_identity_key="gupy:web-610",
+        )
+        application = Application(
+            job_id=job.id,
+            application_key="manual:gmail-web",
+            status=ApplicationStatus.SUBMITTED,
+            stage=ApplicationStage.APPLIED,
+            platform="gupy",
+            external_reference="APP-GMAIL-610",
+        )
+        session.add(application)
+        session.flush()
+        application_id = application.id
+
+    app = create_app(settings)
+    app.state.gmail_client = _FakeGmailClient(
+        [
+            GmailMessage(
+                message_id="gmail-web-1",
+                thread_id="thread-web-1",
+                sender="recrutamento@empresa.example",
+                subject="Entrevista APP-GMAIL-610",
+                received_at=datetime(2026, 7, 20, 14, 0, tzinfo=UTC),
+                body=(
+                    "Convite para entrevista da candidatura APP-GMAIL-610 "
+                    "na vaga Estagio Gmail Dados."
+                ),
+            )
+        ]
+    )
+
+    with TestClient(app) as client:
+        page = client.get("/gmail")
+        assert page.status_code == 200
+        assert "Gmail fake conectado" in page.text
+        token = _csrf(page.text)
+
+        synced = client.post(
+            "/gmail/sync",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert synced.status_code == 303
+
+        refreshed = client.get("/gmail")
+        assert refreshed.status_code == 200
+        assert "Entrevista convidada" in refreshed.text
+        assert "Revisao humana obrigatoria" in refreshed.text
+        assert f"/applications/{application_id}" in refreshed.text
+
+        application_page = client.get(f"/applications/{application_id}")
+        assert application_page.status_code == 200
+        assert "Mensagens do Gmail" in application_page.text
+        assert "Entrevista APP-GMAIL-610" in application_page.text
+
+    with session_scope(settings) as session:
+        application = session.get(Application, application_id)
+        assert application is not None
+        assert application.status is ApplicationStatus.SUBMITTED
+        assert application.stage is ApplicationStage.APPLIED
+        assert session.scalar(select(func.count(EmailMessage.id))) == 1
+        assert session.scalar(select(func.count(ApplicationEvent.id))) == 0
+        assert session.scalar(select(func.count(CareerEvent.id))) == 0
 
 
 def test_web_application_date_filters_include_full_local_day(
@@ -1454,3 +1555,28 @@ def _wait_for_collection_state(
             return status
         time.sleep(0.05)
     raise AssertionError(f"coleta nao chegou ao estado {expected}")
+
+
+class _FakeGmailClient:
+    def __init__(self, messages: Sequence[GmailMessage]) -> None:
+        self._messages = list(messages)
+
+    def search_messages(self, query: str, max_results: int) -> Sequence[GmailMessage]:
+        _ = query
+        return self._messages[:max_results]
+
+
+def _write_gmail_config(settings: Settings) -> None:
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    (settings.config_dir / "gmail.local.yaml").write_text(
+        "\n".join(
+            [
+                "enabled: true",
+                "query: candidatura",
+                "max_results: 10",
+                "scopes:",
+                f"  - {GMAIL_READ_ONLY_SCOPE}",
+            ]
+        ),
+        encoding="utf-8",
+    )

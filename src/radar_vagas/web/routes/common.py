@@ -75,6 +75,7 @@ NAV_ITEMS = (
     NavItem("profile", "Perfil profissional", "/profile", "user"),
     NavItem("sources", "Fontes", "/sources", "database"),
     NavItem("resume-import", "Importar curriculo", "/profile/resume/import", "upload", "secondary"),
+    NavItem("gmail", "Gmail", "/gmail", "mail", "secondary"),
     NavItem("settings", "Configuracoes", "/settings", "settings", "secondary"),
 )
 
@@ -298,6 +299,14 @@ def _page_chrome(path: str, context: dict[str, Any]) -> PageChrome:
             description="Saude local de boards, consultas e execucoes recentes.",
             active_key="sources",
             breadcrumbs=(Breadcrumb("Fontes"),),
+            primary_action=None,
+        )
+    if path == "/gmail":
+        return PageChrome(
+            title="Gmail",
+            description="Mensagens lidas localmente em modo somente leitura.",
+            active_key="gmail",
+            breadcrumbs=(Breadcrumb("Gmail"),),
             primary_action=None,
         )
     return PageChrome(

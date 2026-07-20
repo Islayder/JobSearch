@@ -20,8 +20,10 @@ erDiagram
     COMPANY ||--o{ COMPANY_FACT : documented_by
     COMPANY ||--o{ COMPANY_REVIEW_SNAPSHOT : reviewed_in
     COMPANY ||--o{ JOB : offers
+    COMPANY ||--o{ EMAIL_MESSAGE : mentioned_by
     SEARCH_QUERY ||--o{ DISCOVERY_HIT : finds
     JOB ||--o{ POSTING : groups
+    JOB ||--o{ EMAIL_MESSAGE : linked_by
     POSTING ||--o{ POSTING_REVISION : changed_by
     POSTING ||--o{ DISCOVERY_HIT : seen_in
     JOB ||--o| DECISION : evaluated_by
@@ -30,6 +32,7 @@ erDiagram
     JOB ||--o{ APPLICATION : applied_to
     APPLICATION ||--o{ APPLICATION_EVENT : has
     APPLICATION ||--o{ APPLICATION_MATCH : matched_by
+    APPLICATION ||--o{ EMAIL_MESSAGE : referenced_by
     JOB ||--o{ CAREER_EVENT : scheduled_for
     APPLICATION ||--o{ CAREER_EVENT : scheduled_for
     CAREER_EVENT ||--o{ CAREER_EVENT_AUDIT : audited_by
@@ -179,6 +182,14 @@ vaga local. O match pode ser `EXACT`, `PROBABLE`, `UNMATCHED` ou
 `CONFLICT`, com status local `LINKED`, `NEEDS_REVIEW` ou `IGNORED`.
 `fingerprint` evita duplicar a mesma evidencia em importacoes repetidas.
 
+`EmailMessage` guarda mensagens lidas localmente em modo somente leitura.
+Campos principais: `external_message_id`, `provider`, `thread_id`, `sender`,
+`subject`, `received_at`, `body_excerpt`, `classified_event_type`,
+`classification_confidence`, vinculos opcionais com empresa, vaga e
+candidatura, `suggestion_json`, `source_query` e `fetched_at`. O trecho do
+corpo e limitado ao necessario para revisao, e `suggestion_json` sempre marca
+`requires_human_confirmation`.
+
 `ProfessionalProfile` representa o perfil profissional local. Cada
 `ProfessionalProfileVersion` guarda numero da versao, hash do arquivo local,
 hash da estrutura validada, caminho local de origem, resumo e JSON estruturado
@@ -254,6 +265,9 @@ versao de perfil e data de geracao.
 candidaturas importadas por identidade de plataforma, URL ou referencia externa.
 `ApplicationEvent.application_id + event_key` e unico quando `event_key` esta
 presente. `ApplicationMatch.fingerprint` e unico quando presente.
+`EmailMessage.external_message_id` e unico; a identidade do Gmail usa prefixo
+`gmail:` e consultas frequentes usam indices por provedor, data, empresa, vaga
+e candidatura.
 
 `ProfessionalProfileVersion` possui indice unico parcial para garantir uma
 unica versao ativa global. `ProfileActivationEvent` mantem auditoria da troca

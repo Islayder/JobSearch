@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
+{% block title %}Gmail - Radar de Vagas{% endblock %}
+{% block content %}
+  {% set header_action %}
+    <form class="inline" action="/gmail/sync" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit" {% if not gmail_enabled %}disabled{% endif %}>Sincronizar leitura</button>
+    </form>
+  {% endset %}
+  {{ ui_components.page_header(title="Gmail", description="Leitura local de mensagens relacionadas a candidaturas.", action=header_action) }}
+
+  <section class="metrics" aria-label="Resumo do Gmail">
+    {{ ui_components.metric(gmail_status_text, "Status", "Configuracao local.", icon="mail", tone="info") }}
+    {{ ui_components.metric("gmail.readonly", "Escopo", "Sem permissao de envio ou alteracao.", icon="check", tone="success") }}
+    {{ ui_components.metric(gmail_messages|length, "Mensagens", "Itens armazenados para revisao.", icon="database") }}
+    {{ ui_components.metric(gmail_max_results, "Limite", "Maximo por sincronizacao.", icon="info") }}
+  </section>
+
+  {% if not gmail_enabled %}
+    <section class="card">
+      {{ ui_components.empty_state("Gmail desconectado.", "A integracao fica desativada por padrao e nao le mensagens sem configuracao local.", icon="mail") }}
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <h2>Mensagens para revisao</h2>
+        <p>Sugestoes nunca alteram candidatura, agenda, labels ou estado da caixa postal.</p>
+      </div>
+    </div>
+    <div class="list">
+      {% for row in gmail_messages %}
+        {% set message = row.message %}
+        {% set suggestion = row.suggestion %}
+        <article class="row">
+          <div>
+            <div class="badge-row">
+              <span class="badge badge-info">Somente leitura</span>
+              <span class="badge badge-warning">Revisao humana obrigatoria</span>
+              {% if message.classified_event_type %}
+                <span class="badge">{{ application_event_labels.get(message.classified_event_type, message.classified_event_type) }}</span>
+              {% endif %}
+            </div>
+            <h3>{{ message.subject or "Assunto nao encontrado" }}</h3>
+            <p class="muted">{{ message.sender or "remetente nao encontrado" }} · {{ message.received_at|datetime(ui.timezone) }}</p>
+            {% if message.body_excerpt %}
+              <p>{{ message.body_excerpt|preview(420) }}</p>
+            {% else %}
+              <p>corpo necessario nao encontrado</p>
+            {% endif %}
+            <dl>
+              <dt>Candidatura associada</dt>
+              <dd>
+                {% if message.application %}
+                  <a href="/applications/{{ message.application.id }}">Candidatura {{ message.application.id }}</a>
+                {% else %}
+                  nao encontrado
+                {% endif %}
+              </dd>
+              <dt>Tipo sugerido</dt><dd>{{ suggestion.event_type if suggestion.event_type else "nao encontrado" }}</dd>
+              <dt>Status sugerido</dt><dd>{{ suggestion.suggested_application_status if suggestion.suggested_application_status else "nao encontrado" }}</dd>
+              <dt>Evento sugerido</dt><dd>{{ suggestion.suggested_career_event_type if suggestion.suggested_career_event_type else "nao encontrado" }}</dd>
+              <dt>Horario sugerido</dt><dd>{{ suggestion.suggested_event_start if suggestion.suggested_event_start else "nao encontrado" }}</dd>
+            </dl>
+          </div>
+        </article>
+      {% else %}
+        {{ ui_components.empty_state("Nenhuma mensagem importada.", "Quando habilitado, o Gmail le mensagens em modo somente leitura e salva sugestoes para revisao.", icon="mail") }}
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

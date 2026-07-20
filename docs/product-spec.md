@@ -18,11 +18,13 @@ duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 - curriculo PDF textual, DOCX, TXT ou Markdown importado pela web com revisao
   humana obrigatoria;
 - agenda local registrada manualmente ou derivada de dados locais;
-- informacoes locais de empresa e snapshots manuais de relatos publicos.
+- informacoes locais de empresa e snapshots manuais de relatos publicos;
+- Gmail opcional em modo somente leitura para sugerir atualizacoes de
+  candidaturas.
 
-Nao ha crawling recursivo, IA, OCR, Gmail, geracao automatica de curriculo,
-Google Calendar, preenchimento de formularios, candidatura automatica ou
-interface publica.
+Nao ha crawling recursivo, IA, OCR, Gmail com escrita, geracao automatica de
+curriculo, Google Calendar, preenchimento de formularios, candidatura
+automatica ou interface publica.
 
 ## Usuario
 
@@ -139,7 +141,19 @@ A agenda local registra prazos, entrevistas, testes, cases, documentos,
 respostas de oferta e follow-ups. Eventos podem estar ligados a vaga,
 candidatura, ambas ou nenhuma delas. O sistema valida datas com timezone,
 intervalos e URLs de reuniao, mas nao cria evento em calendario externo, nao
-le e-mail e nao envia notificacao.
+envia notificacao e nao cria eventos automaticamente a partir de e-mail.
+
+## Gmail Somente Leitura
+
+O Gmail e opcional, local e desativado por padrao. Quando ativado com
+credenciais locais fora do Git e escopo `gmail.readonly`, o Radar pode ler
+mensagens relacionadas a candidaturas e salvar assunto, remetente, data, trecho
+necessario do corpo, associacao local e sugestao.
+
+As sugestoes podem indicar confirmacao, teste, case, entrevista, rejeicao,
+oferta ou atualizacao de processo. Elas nunca mudam status, nao criam eventos,
+nao criam candidaturas e nao alteram a caixa postal. Toda acao derivada de
+mensagem exige confirmacao humana em fluxo separado.
 
 ## Interface Web Local
 

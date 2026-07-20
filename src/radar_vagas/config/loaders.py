@@ -9,6 +9,7 @@ from radar_vagas.config.schemas import (
     BlockedCompaniesConfig,
     CompanyBoardsConfig,
     EligibilityRulesConfig,
+    GmailConfig,
     NetworkConfig,
     ProfileConfig,
     RankingWeightsConfig,
@@ -68,6 +69,15 @@ def load_ui_config(config_dir: Path) -> UiConfig:
         if path.exists():
             return UiConfig.model_validate(_load_yaml(path))
     return UiConfig()
+
+
+def load_gmail_config(config_dir: Path) -> GmailConfig:
+    preferred = config_dir / "gmail.local.yaml"
+    example = config_dir / "gmail.example.yaml"
+    for path in (preferred, example):
+        if path.exists():
+            return GmailConfig.model_validate(_load_yaml(path))
+    return GmailConfig()
 
 
 def write_ui_local_config(config_dir: Path, config: UiConfig) -> Path:
