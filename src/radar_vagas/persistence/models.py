@@ -677,6 +677,9 @@ class ResumeImportSession(Base):
     summary: Mapped[str | None] = mapped_column(Text)
     page_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     extracted_character_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    extraction_mode: Mapped[str] = mapped_column(String(20), default="automatic", nullable=False)
+    extraction_quality: Mapped[str] = mapped_column(String(20), default="GOOD", nullable=False)
+    extraction_metrics_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     warnings_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     candidate_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     confirmed_profile_version_id: Mapped[int | None] = mapped_column(

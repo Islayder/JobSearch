@@ -81,7 +81,8 @@ def extract_docx_document(content: bytes) -> ExtractedDocument:
         page_count=1,
         source_format="docx",
         extracted_character_count=total_chars,
-        quality="textual",
+        quality="GOOD",
+        extraction_mode="native",
     )
 
 

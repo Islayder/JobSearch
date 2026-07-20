@@ -47,7 +47,8 @@ def extract_text_document(content: bytes, *, source_format: str) -> ExtractedDoc
         page_count=1,
         source_format=source_format,
         extracted_character_count=character_count,
-        quality="textual",
+        quality="GOOD",
+        extraction_mode="text",
     )
 
 

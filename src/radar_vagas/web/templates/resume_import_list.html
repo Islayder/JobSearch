@@ -7,12 +7,13 @@
   <section class="card">
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Arquivo</th><th>Formato</th><th>Status</th><th>Itens</th><th>Criado</th><th>Atualizado</th><th>Acoes</th></tr></thead>
+        <thead><tr><th>Arquivo</th><th>Formato</th><th>Qualidade</th><th>Status</th><th>Itens</th><th>Criado</th><th>Atualizado</th><th>Acoes</th></tr></thead>
         <tbody>
           {% for item in imports %}
             <tr>
               <td>{{ item.sanitized_filename }}</td>
               <td>{{ item.source_format|upper }}</td>
+              <td>{{ item.extraction_quality or "GOOD" }}</td>
               <td><span class="badge status-{{ item.status|status_class }}">{{ item.status|label }}</span></td>
               <td>{{ item.candidate_count }}</td>
               <td>{{ item.created_at|datetime(ui.timezone) }}</td>
@@ -28,7 +29,7 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="7">{{ ui_components.empty_state("Nenhuma importacao encontrada.", "Rascunhos criados pelo importador aparecem nesta lista.", "Novo importador", "/profile/resume/import", icon="upload") }}</td></tr>
+            <tr><td colspan="8">{{ ui_components.empty_state("Nenhuma importacao encontrada.", "Rascunhos criados pelo importador aparecem nesta lista.", "Novo importador", "/profile/resume/import", icon="upload") }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

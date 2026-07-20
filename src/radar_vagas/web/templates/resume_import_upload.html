@@ -23,6 +23,15 @@
         <span data-dropzone-label>PDF textual, DOCX, TXT ou Markdown ate 8 MB. Arquivos protegidos, antigos .doc e PDFs sem texto nao sao importados.</span>
         <input id="resume_file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
       </label>
+      <div class="field">
+        <label for="extraction_mode">Modo de extracao de PDF</label>
+        <select id="extraction_mode" name="extraction_mode">
+          <option value="automatic" selected>Automatico</option>
+          <option value="plain">Texto normal</option>
+          <option value="layout">Layout</option>
+          <option value="geometric">Geometrico</option>
+        </select>
+      </div>
       <div class="resume-upload-actions">
         <button type="submit">Extrair para revisao</button>
         <a class="button button-secondary" href="/profile">Voltar ao perfil</a>
@@ -52,19 +61,20 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Arquivo</th><th>Formato</th><th>Status</th><th>Itens</th><th>Atualizado</th><th>Acao</th></tr></thead>
+        <thead><tr><th>Arquivo</th><th>Formato</th><th>Qualidade</th><th>Status</th><th>Itens</th><th>Atualizado</th><th>Acao</th></tr></thead>
         <tbody>
           {% for item in imports %}
             <tr>
               <td>{{ item.sanitized_filename }}</td>
               <td>{{ item.source_format|upper }}</td>
+              <td>{{ item.extraction_quality or "GOOD" }}</td>
               <td><span class="badge status-{{ item.status|status_class }}">{{ item.status|label }}</span></td>
               <td>{{ item.candidate_count }}</td>
               <td>{{ item.updated_at|datetime(ui.timezone) }}</td>
               <td><a class="button button-secondary" href="/profile/resume/imports/{{ item.import_key }}/review">Abrir</a></td>
             </tr>
           {% else %}
-            <tr><td colspan="6">{{ ui_components.empty_state("Nenhum rascunho recente.", "Envie um curriculo para iniciar uma revisao humana.", icon="upload") }}</td></tr>
+            <tr><td colspan="7">{{ ui_components.empty_state("Nenhum rascunho recente.", "Envie um curriculo para iniciar uma revisao humana.", icon="upload") }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

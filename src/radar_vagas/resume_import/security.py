@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 import zipfile
 from dataclasses import dataclass
 from hashlib import sha256
@@ -61,8 +62,18 @@ def validate_resume_upload(filename: str, content: bytes) -> ResumeUpload:
 
 
 def sanitize_filename(filename: str) -> str:
-    raw_name = Path(filename or "curriculo").name
-    safe = re.sub(r"[^A-Za-z0-9._ -]+", "_", raw_name).strip(" .")
+    raw_name = str(filename or "curriculo").replace("\\", "/").split("/")[-1]
+    raw_name = raw_name.replace("\x00", "")
+    if raw_name in {"", ".", ".."}:
+        raw_name = "curriculo"
+    cleaned_chars: list[str] = []
+    for char in raw_name:
+        category = unicodedata.category(char)
+        if category.startswith("C") or char in '<>:"|?*':
+            cleaned_chars.append("_")
+        else:
+            cleaned_chars.append(char)
+    safe = re.sub(r"\s+", " ", "".join(cleaned_chars)).strip(" .")
     if not safe:
         safe = "curriculo"
     return safe[:255]

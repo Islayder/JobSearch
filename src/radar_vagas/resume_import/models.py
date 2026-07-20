@@ -32,6 +32,8 @@ class ExtractedDocument:
     source_format: str
     extracted_character_count: int
     quality: str
+    extraction_mode: str | None = None
+    quality_metrics: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -178,9 +178,11 @@ entidade base `Resume` e reutilizada por perfil; novas importacoes criam novas
 `ResumeImportSession` registra um rascunho local de importacao revisada de
 curriculo. Campos principais: `import_key` aleatorio, `source_format`,
 `sanitized_filename`, `content_hash`, `status`, cabecalho revisavel,
+`extraction_mode`, `extraction_quality`, `extraction_metrics_json`,
 contadores, avisos sanitizados, timestamps e `confirmed_profile_version_id`
-opcional. Status possiveis: `EXTRACTING`, `REVIEWING`, `CONFIRMED`,
-`DISCARDED` e `FAILED`.
+opcional. `extraction_metrics_json` guarda apenas metricas agregadas, nao o
+texto integral extraido. Status possiveis: `EXTRACTING`, `REVIEWING`,
+`CONFIRMED`, `DISCARDED` e `FAILED`.
 
 `ResumeImportCandidate` guarda cada item extraido para revisao humana. Campos
 principais: sessao, tipo (`HEADLINE`, `SUMMARY`, `SKILL`, `EXPERIENCE`,

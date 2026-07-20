@@ -102,14 +102,17 @@ diretamente, sem JSON temporario em `data/imports`.
 O fluxo revisado de curriculo aceita PDF textual, DOCX, TXT e Markdown com
 limite de 8 MB. PDF protegido, PDF sem texto, `.doc` antigo, `.docm`, DOCX com
 macros, referencias externas ou estrutura abusiva sao rejeitados com mensagem
-humana. Nao ha OCR, servico externo, Word, LibreOffice ou Playwright.
+humana. PDFs textuais sao avaliados por estrategia de extracao: automatico,
+texto normal, layout e geometrico. Quando a qualidade fica degradada, a revisao
+mostra aviso destacado e permite tentar outro modo por POST com CSRF e reenvio
+do mesmo PDF. Nao ha OCR, servico externo, Word, LibreOffice ou Playwright.
 
 Rascunhos de curriculo ficam em `/profile/resume/imports`. A tela de revisao
 mostra candidatos por secao, indice lateral, resumo de pendencias, confianca,
-explicacao, origem, trecho curto e estado. O usuario pode salvar edicoes,
-confirmar, remover ou restaurar cada item. A confirmacao final oferece "Ativar
-agora" e "Analisar vagas depois"; nenhuma comparacao roda se a segunda opcao
-nao for marcada.
+explicacao, origem, trecho curto, modo de extracao, qualidade e estado. O
+usuario pode salvar edicoes, confirmar, remover ou restaurar cada item. A
+confirmacao final oferece "Ativar agora" e "Analisar vagas depois"; nenhuma
+comparacao roda se a segunda opcao nao for marcada.
 
 Habilidade digitada sem evidencia explicita e tratada como declarada, nao como
 comprovada. Textarea e linhas estruturadas sao interpretados separadamente e

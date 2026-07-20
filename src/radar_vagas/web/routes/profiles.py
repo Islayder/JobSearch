@@ -43,6 +43,7 @@ from radar_vagas.resume_import.service import (
     purge_import,
     remove_candidate,
     restore_candidate,
+    retry_import_session,
     update_candidate,
     update_import_header,
 )
@@ -208,6 +209,7 @@ async def resume_import_create(
     session: Annotated[Session, Depends(get_session)],
     file: Annotated[UploadFile, UPLOAD_FILE],
     _csrf: Annotated[None, Depends(csrf_protect)] = None,
+    extraction_mode: Annotated[str, Form()] = "automatic",
 ) -> Response:
     _ = _csrf
     try:
@@ -216,6 +218,7 @@ async def resume_import_create(
             session,
             filename=file.filename or "curriculo.txt",
             content=content,
+            extraction_mode=extraction_mode,
         )
     except RadarError as exc:
         return render(
@@ -253,6 +256,39 @@ def resume_import_review(
         request,
         "resume_import_review.html",
         _resume_review_context(import_session),
+    )
+
+
+@router.post("/profile/resume/imports/{import_key}/retry")
+async def resume_import_retry(
+    request: Request,
+    import_key: str,
+    session: Annotated[Session, Depends(get_session)],
+    file: Annotated[UploadFile, UPLOAD_FILE],
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+    extraction_mode: Annotated[str, Form()] = "automatic",
+) -> Response:
+    _ = _csrf
+    try:
+        content = await read_limited_resume_upload(file)
+        result = retry_import_session(
+            session,
+            import_key,
+            filename=file.filename or "curriculo.pdf",
+            content=content,
+            extraction_mode=extraction_mode,
+        )
+    except RadarError as exc:
+        import_session = get_import_session(session, import_key)
+        return render(
+            request,
+            "resume_import_review.html",
+            _resume_review_context(import_session, resume_error=str(exc)),
+            status_code=400,
+        )
+    return redirect(
+        f"/profile/resume/imports/{result.import_key}/review",
+        message=f"Nova extracao gerou {result.candidate_count} itens para revisao.",
     )
 
 
@@ -414,9 +450,33 @@ RESUME_DECISION_LABELS = {
     ResumeImportDecision.EDITED: "Editado",
     ResumeImportDecision.REMOVED: "Removido",
 }
+RESUME_EXTRACTION_MODE_LABELS = {
+    "automatic": "Automatico",
+    "plain": "Texto normal",
+    "layout": "Layout",
+    "geometric": "Geometrico",
+    "native": "Nativo",
+    "text": "Texto",
+}
+RESUME_QUALITY_LABELS = {
+    "GOOD": "Boa",
+    "ACCEPTABLE": "Aceitavel",
+    "DEGRADED": "Degradada",
+    "UNUSABLE": "Inutilizavel",
+}
+RESUME_RETRY_MODES = (
+    ("automatic", "Automatico"),
+    ("plain", "Texto normal"),
+    ("layout", "Layout"),
+    ("geometric", "Geometrico"),
+)
 
 
-def _resume_review_context(import_session: ResumeImportSession) -> dict[str, object]:
+def _resume_review_context(
+    import_session: ResumeImportSession,
+    *,
+    resume_error: str | None = None,
+) -> dict[str, object]:
     grouped: dict[str, list[dict[str, object]]] = {key: [] for key, _label in RESUME_SECTION_ORDER}
     counts = {decision: 0 for decision in ResumeImportDecision}
     for candidate in import_session.candidates:
@@ -434,6 +494,21 @@ def _resume_review_context(import_session: ResumeImportSession) -> dict[str, obj
         "candidate_labels": RESUME_CANDIDATE_LABELS,
         "warnings": warnings,
         "reviewable": import_session.status.value == "REVIEWING",
+        "resume_error": resume_error,
+        "extraction_mode_label": RESUME_EXTRACTION_MODE_LABELS.get(
+            import_session.extraction_mode,
+            import_session.extraction_mode,
+        ),
+        "extraction_quality_label": RESUME_QUALITY_LABELS.get(
+            import_session.extraction_quality,
+            import_session.extraction_quality,
+        ),
+        "retry_modes": RESUME_RETRY_MODES,
+        "show_extraction_retry": (
+            import_session.source_format == "pdf"
+            and import_session.extraction_quality == "DEGRADED"
+            and import_session.status.value == "REVIEWING"
+        ),
     }
 
 

@@ -70,8 +70,9 @@ def create_import_session(
     *,
     filename: str,
     content: bytes,
+    extraction_mode: str = "automatic",
 ) -> ResumeImportCreateResult:
-    upload, document = extract_resume(filename, content)
+    upload, document = extract_resume(filename, content, extraction_mode=extraction_mode)
     candidates = parse_resume_document(document)
     if not candidates:
         raise RadarError("Nao encontrei informacoes profissionais suficientes para revisar.")
@@ -87,6 +88,9 @@ def create_import_session(
         summary=_first_payload_value(candidates, ResumeImportCandidateType.SUMMARY, "summary"),
         page_count=document.page_count,
         extracted_character_count=document.extracted_character_count,
+        extraction_mode=document.extraction_mode or extraction_mode,
+        extraction_quality=document.quality,
+        extraction_metrics_json=json_dump(document.quality_metrics),
         warnings_json=json_dump(document.warnings),
         candidate_count=len(candidates),
         created_at=utc_now(),
@@ -113,6 +117,74 @@ def create_import_session(
             )
         )
     session.flush()
+    return ResumeImportCreateResult(
+        import_key=import_session.import_key,
+        candidate_count=len(candidates),
+        warning_count=len(document.warnings),
+    )
+
+
+def retry_import_session(
+    session: Session,
+    import_key: str,
+    *,
+    filename: str,
+    content: bytes,
+    extraction_mode: str,
+) -> ResumeImportCreateResult:
+    import_session = _reviewable_session(session, import_key)
+    if import_session.source_format != "pdf":
+        raise RadarError("A tentativa alternativa de extracao esta disponivel apenas para PDF.")
+    upload, document = extract_resume(filename, content, extraction_mode=extraction_mode)
+    if upload.source_format != "pdf":
+        raise RadarError("Envie o mesmo PDF para tentar outro modo de extracao.")
+    if upload.content_hash != import_session.content_hash:
+        raise RadarError("Envie o mesmo PDF ja associado a este rascunho.")
+    candidates = parse_resume_document(document)
+    if not candidates:
+        raise RadarError("Nao encontrei informacoes profissionais suficientes para revisar.")
+
+    for existing_candidate in list(import_session.candidates):
+        session.delete(existing_candidate)
+    session.flush()
+    session.expire(import_session, ["candidates"])
+
+    import_session.sanitized_filename = upload.filename
+    import_session.page_count = document.page_count
+    import_session.extracted_character_count = document.extracted_character_count
+    import_session.extraction_mode = document.extraction_mode or extraction_mode
+    import_session.extraction_quality = document.quality
+    import_session.extraction_metrics_json = json_dump(document.quality_metrics)
+    import_session.warnings_json = json_dump(document.warnings)
+    import_session.candidate_count = len(candidates)
+    import_session.headline = _first_payload_value(
+        candidates, ResumeImportCandidateType.HEADLINE, "headline"
+    )
+    import_session.summary = _first_payload_value(
+        candidates, ResumeImportCandidateType.SUMMARY, "summary"
+    )
+    import_session.updated_at = utc_now()
+
+    for sequence, parsed_candidate in enumerate(candidates, start=1):
+        session.add(
+            ResumeImportCandidate(
+                session_id=import_session.id,
+                candidate_type=parsed_candidate.candidate_type,
+                sequence=sequence,
+                original_payload_json=json_dump(parsed_candidate.payload),
+                reviewed_payload_json=None,
+                decision=ResumeImportDecision.PENDING,
+                confidence_score=parsed_candidate.confidence_score,
+                confidence_label=parsed_candidate.confidence_label,
+                explanation=parsed_candidate.explanation,
+                source_reference=parsed_candidate.source_reference,
+                source_excerpt=parsed_candidate.source_excerpt,
+                created_at=utc_now(),
+                updated_at=utc_now(),
+            )
+        )
+    session.flush()
+    session.expire(import_session, ["candidates"])
     return ResumeImportCreateResult(
         import_key=import_session.import_key,
         candidate_count=len(candidates),

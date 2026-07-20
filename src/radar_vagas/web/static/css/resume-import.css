@@ -25,6 +25,8 @@
 .resume-upload-panel,
 .resume-header-form,
 .resume-section,
+.resume-quality-panel,
+.resume-retry-panel,
 .resume-review-summary,
 .resume-sticky-actions {
   background: var(--color-surface);
@@ -140,7 +142,8 @@
   padding: 12px;
 }
 
-.resume-review-summary div {
+.resume-review-summary div,
+.resume-quality-panel div {
   background: var(--color-surface-soft);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -155,6 +158,33 @@
 
 .resume-review-summary span {
   color: var(--color-text-muted);
+}
+
+.resume-quality-panel,
+.resume-retry-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+}
+
+.resume-quality-panel {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.resume-quality-panel strong {
+  display: block;
+}
+
+.resume-retry-panel {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.resume-retry-panel form {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 220px) minmax(240px, 1fr) auto;
 }
 
 .resume-header-form {

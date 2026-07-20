@@ -10,6 +10,10 @@
     <span>3. Criar perfil</span>
   </section>
 
+  {% if resume_error %}
+    <div class="resume-alert danger" role="alert">{{ resume_error }}</div>
+  {% endif %}
+
   <section class="resume-review-summary" aria-label="Resumo da revisao">
     <div><strong>{{ import_session.candidate_count }}</strong><span>itens</span></div>
     <div><strong>{{ decision_summary.pending }}</strong><span>pendentes</span></div>
@@ -17,6 +21,46 @@
     <div><strong>{{ decision_summary.removed }}</strong><span>removidos</span></div>
     <div><strong>{{ warnings|length }}</strong><span>avisos</span></div>
   </section>
+
+  <section class="resume-quality-panel" aria-label="Qualidade da extracao">
+    <div>
+      <span class="muted">Modo</span>
+      <strong>{{ extraction_mode_label }}</strong>
+    </div>
+    <div>
+      <span class="muted">Qualidade</span>
+      <strong>{{ extraction_quality_label }}</strong>
+    </div>
+    <div>
+      <span class="muted">Arquivo</span>
+      <strong>{{ import_session.source_format|upper }}</strong>
+    </div>
+  </section>
+
+  {% if show_extraction_retry %}
+    <section class="resume-retry-panel">
+      <div>
+        <h2>Tentar outro modo de extracao</h2>
+        <p>Envie o mesmo PDF e escolha outro modo para atualizar este rascunho.</p>
+      </div>
+      <form action="/profile/resume/imports/{{ import_session.import_key }}/retry" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field">
+          <label for="retry_extraction_mode">Modo</label>
+          <select id="retry_extraction_mode" name="extraction_mode">
+            {% for mode, label in retry_modes %}
+              <option value="{{ mode }}" {% if mode == "geometric" %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="retry_resume_file">Mesmo PDF</label>
+          <input id="retry_resume_file" name="file" type="file" accept=".pdf" required>
+        </div>
+        <button type="submit">Tentar outro modo</button>
+      </form>
+    </section>
+  {% endif %}
 
   {% if import_session.status.value != "REVIEWING" %}
     <div class="resume-alert warning">Esta importacao esta {{ import_session.status|label }}. Os itens ficam em modo consulta.</div>
