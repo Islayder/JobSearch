@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Rascunhos de curriculo - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>Rascunhos de curriculo</h1>
+      <p>Importacoes locais aguardando revisao, confirmadas ou descartadas.</p>
+    </div>
+    <a class="button" href="/profile/resume/import">Novo importador</a>
+  </section>
+
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Arquivo</th><th>Formato</th><th>Status</th><th>Itens</th><th>Criado</th><th>Atualizado</th><th>Acoes</th></tr></thead>
+        <tbody>
+          {% for item in imports %}
+            <tr>
+              <td>{{ item.sanitized_filename }}</td>
+              <td>{{ item.source_format|upper }}</td>
+              <td><span class="badge status-{{ item.status|status_class }}">{{ item.status|label }}</span></td>
+              <td>{{ item.candidate_count }}</td>
+              <td>{{ item.created_at|datetime(ui.timezone) }}</td>
+              <td>{{ item.updated_at|datetime(ui.timezone) }}</td>
+              <td class="actions-cell">
+                <a class="button secondary" href="/profile/resume/imports/{{ item.import_key }}/review">Abrir</a>
+                {% if item.status.value != "CONFIRMED" %}
+                  <form class="inline" action="/profile/resume/imports/{{ item.import_key }}/purge" method="post" data-confirm="Remover este rascunho local?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="danger secondary" type="submit">Limpar</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="empty">Nenhuma importacao encontrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

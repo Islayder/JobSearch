@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Importar curriculo - Radar de Vagas{% endblock %}
+{% block content %}
+  <section class="page-title">
+    <div>
+      <h1>Importar curriculo</h1>
+      <p>Extraia dados de PDF, DOCX, TXT ou Markdown e revise cada item antes de criar o perfil.</p>
+    </div>
+    <a class="button secondary" href="/profile/resume/imports">Rascunhos</a>
+  </section>
+
+  <section class="resume-stepper" aria-label="Etapas da importacao">
+    <span class="active">1. Enviar arquivo</span>
+    <span>2. Revisar itens</span>
+    <span>3. Criar perfil</span>
+  </section>
+
+  {% if resume_error %}
+    <div class="resume-alert danger">{{ resume_error }}</div>
+  {% endif %}
+
+  <form class="resume-upload-panel" action="/profile/resume/import" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="resume-dropzone" for="resume_file" tabindex="0">
+      <strong>Selecionar curriculo</strong>
+      <span>PDF textual, DOCX, TXT ou Markdown ate 8 MB. Arquivos protegidos, antigos .doc e PDFs sem texto nao sao importados.</span>
+      <input id="resume_file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
+    </label>
+    <div class="resume-upload-actions">
+      <button type="submit">Extrair para revisao</button>
+      <a class="button secondary" href="/profile">Voltar ao perfil</a>
+    </div>
+  </form>
+
+  <section class="card">
+    <h2>Rascunhos recentes</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Arquivo</th><th>Formato</th><th>Status</th><th>Itens</th><th>Atualizado</th><th>Acao</th></tr></thead>
+        <tbody>
+          {% for item in imports %}
+            <tr>
+              <td>{{ item.sanitized_filename }}</td>
+              <td>{{ item.source_format|upper }}</td>
+              <td><span class="badge status-{{ item.status|status_class }}">{{ item.status|label }}</span></td>
+              <td>{{ item.candidate_count }}</td>
+              <td>{{ item.updated_at|datetime(ui.timezone) }}</td>
+              <td><a class="button secondary" href="/profile/resume/imports/{{ item.import_key }}/review">Abrir</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="empty">Nenhum rascunho recente.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

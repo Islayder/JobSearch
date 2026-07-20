@@ -21,6 +21,8 @@ data/exports/*
 data/imports/*
 !data/imports/.gitkeep
 !.gitkeep
+# Curriculos reais devem ficar nestes diretorios locais ou fora do repositorio.
+# Nao ignore codigo, templates, docs, testes ou fixtures sinteticas pelo nome.
 data/resumes/
 data/curricula/
 data/backups/
@@ -30,17 +32,6 @@ data/backups/
 .git.invalid-backup/
 *.backup
 *.bak
-*curriculo*
-*currículo*
-*resume*
-!docs/resume-import.md
-!migrations/versions/0011_resume_import_review.py
-!src/radar_vagas/resume_import/
-!src/radar_vagas/resume_import/**
-src/radar_vagas/resume_import/__pycache__/
-src/radar_vagas/resume_import/**/*.pyc
-!tests/unit/test_resume_import.py
-!tests/integration/test_resume_import_web.py
 data/personal/
 config/profile.local.yaml
 config/professional_profile.local.yaml

@@ -72,7 +72,7 @@ def test_resume_session_requires_review_before_profile_and_confirms_with_provena
         assert import_session.status == ResumeImportStatus.REVIEWING
         assert session.scalar(select(ProfessionalProfileVersion.id)) is None
         assert not any(
-            "islayder@example.com" in c.original_payload_json for c in import_session.candidates
+            "candidate@example.com" in c.original_payload_json for c in import_session.candidates
         )
 
         for candidate in import_session.candidates:
@@ -91,7 +91,7 @@ def test_resume_session_requires_review_before_profile_and_confirms_with_provena
         assert profile_version.is_active is True
         assert profile_version.source_format == "markdown"
         assert "resume_import" in profile_version.raw_profile_json
-        assert "islayder@example.com" not in profile_version.raw_profile_json
+        assert "candidate@example.com" not in profile_version.raw_profile_json
         assert import_session.status == ResumeImportStatus.CONFIRMED
         assert import_session.confirmed_profile_version_id == profile_version.id
 
@@ -139,7 +139,7 @@ PUC Minas - Ciencia de Dados, cursando 2026
 ## Idiomas
 Ingles intermediario
 
-Contato: islayder@example.com
+Contato: candidate@example.com
 """
 
 
