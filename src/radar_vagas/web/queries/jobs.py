@@ -24,6 +24,7 @@ from radar_vagas.persistence.models import (
     Application,
     Company,
     Decision,
+    InterviewPreparation,
     Job,
     JobProfileComparison,
     Posting,
@@ -146,13 +147,18 @@ def job_detail(session: Session, job_id: int) -> Job | None:
     return session.scalar(
         select(Job)
         .options(
-            selectinload(Job.company),
+            selectinload(Job.company).selectinload(Company.intelligence_profile),
+            selectinload(Job.company).selectinload(Company.facts),
+            selectinload(Job.company).selectinload(Company.review_snapshots),
             selectinload(Job.postings).selectinload(Posting.source),
             selectinload(Job.decision),
             selectinload(Job.review_state),
             selectinload(Job.review_events),
             selectinload(Job.applications).selectinload(Application.events),
             selectinload(Job.career_events),
+            selectinload(Job.interview_preparations).selectinload(
+                InterviewPreparation.profile_version
+            ),
             selectinload(Job.profile_comparisons).selectinload(
                 JobProfileComparison.requirement_matches
             ),

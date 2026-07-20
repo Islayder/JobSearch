@@ -65,7 +65,8 @@ A tela de perfil permite ajustar configuracoes basicas sem editar YAML.
   ativacao e comparacao inicial de vagas.
 - Vagas: busca textual, busca rapida no header, abas, filtros agrupados,
   chips de filtros ativos, cartoes de vaga, paginacao, detalhe, favoritar,
-  descartar, restaurar, registrar candidatura manual e criar evento.
+  descartar, restaurar, registrar candidatura manual, criar evento, registrar
+  informacoes locais de empresa e gerar preparacao de entrevista.
 - Candidaturas: lista filtravel por empresa, status, etapa, plataforma,
   periodo e atalhos de retorno/teste/case/entrevista/oferta/rejeicao/retirada;
   o detalhe mostra timeline vertical, agenda ligada, proxima acao e botoes de
@@ -126,6 +127,18 @@ ativo, versao corrente das regras de perfil e hash atual do conteudo da vaga.
 Filtros, ordenacao e score exibido ignoram analises historicas. No detalhe, uma
 analise historica ainda fica acessivel, mas aparece como desatualizada quando o
 perfil, as regras ou o conteudo da vaga mudaram.
+
+No detalhe da vaga, a secao de empresa separa informacoes por origem:
+Informacao oficial, Relato de funcionarios, Inferencia do Radar e Anotacao do
+usuario. O usuario pode salvar perfil local, fatos e snapshots informativos de
+relatos. A interface nao faz scraping, login, CAPTCHA, crawling agressivo ou
+qualquer leitura autenticada de plataformas externas.
+
+A preparacao de entrevista e gerada somente por POST com CSRF e usa dados ja
+locais: vaga, empresa, perfil ativo e comparacao atual quando existir. Ela
+mantem fontes utilizadas em JSON, mostra `nao encontrado` quando faltar dado e
+nao inventa cultura, salarios, beneficios, tecnologias, perguntas realmente
+feitas pela empresa ou etapas do processo seletivo.
 
 ## Design e Assets
 

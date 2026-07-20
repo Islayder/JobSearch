@@ -17,7 +17,8 @@ duplicatas exatas, avalia compatibilidade e gera um ranking explicavel.
 - perfil profissional/curriculo local em YAML, JSON ou TXT estruturado;
 - curriculo PDF textual, DOCX, TXT ou Markdown importado pela web com revisao
   humana obrigatoria;
-- agenda local registrada manualmente ou derivada de dados locais.
+- agenda local registrada manualmente ou derivada de dados locais;
+- informacoes locais de empresa e snapshots manuais de relatos publicos.
 
 Nao ha crawling recursivo, IA, OCR, Gmail, geracao automatica de curriculo,
 Google Calendar, preenchimento de formularios, candidatura automatica ou
@@ -113,6 +114,24 @@ ou quando experiencia/projeto/formacao/idioma sustentam a habilidade.
 Comparacoes sao historicas. A mesma vaga com a mesma versao de perfil, mesma
 versao de regras e mesmo hash de conteudo retorna o resultado existente; quando
 algum desses elementos muda, uma nova comparacao e criada.
+
+## Empresas e Entrevistas
+
+O detalhe da vaga pode manter perfil local da empresa, fatos oficiais,
+anotacoes do usuario e snapshots informativos de relatos de funcionarios. Toda
+afirmacao fica separada por origem: informacao oficial, relato de funcionarios,
+inferencia do Radar ou anotacao do usuario.
+
+A preparacao de entrevista usa somente dados locais da vaga, da empresa, do
+perfil ativo e da comparacao atual quando existir. Ela gera resumo, perguntas
+provaveis, experiencias relevantes, lacunas, perguntas para o entrevistador,
+checklist e fontes utilizadas. Quando faltar informacao, deve exibir `nao
+encontrado`.
+
+O Radar nao inventa cultura, salarios, beneficios, tecnologias, perguntas
+realmente feitas pela empresa ou etapas do processo seletivo. Tambem nao faz
+login, CAPTCHA, bypass, sessao autenticada, crawling agressivo nem alteracao
+automatica de candidatura ou agenda.
 
 ## Agenda Local
 

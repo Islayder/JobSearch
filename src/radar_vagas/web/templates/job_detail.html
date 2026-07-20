@@ -145,6 +145,246 @@
           {{ ui_components.empty_state("Nenhuma comparacao atual calculada.", "Use o botao de recalculo para comparar esta vaga com o perfil ativo.", icon="check") }}
         {% endif %}
       </section>
+
+      <section class="card" id="company-intelligence">
+        <div class="section-heading">
+          <div>
+            <h2>Empresa</h2>
+            <p>Informacoes locais separadas por origem.</p>
+          </div>
+        </div>
+
+        <div class="content-grid two">
+          <div>
+            <h3>Perfil local</h3>
+            {% if company_profile %}
+              <p><strong>{{ company_profile.name }}</strong></p>
+              <p>{{ company_profile.description or "descricao nao encontrada" }}</p>
+              <dl>
+                <dt>Site oficial</dt>
+                <dd>
+                  {% if company_profile.official_website %}
+                    <a href="{{ company_profile.official_website }}" target="_blank" rel="noopener noreferrer">{{ company_profile.official_website }}</a>
+                  {% else %}
+                    nao encontrado
+                  {% endif %}
+                </dd>
+                <dt>Setor</dt><dd>{{ company_profile.industry or "nao encontrado" }}</dd>
+                <dt>Tamanho</dt><dd>{{ company_profile.company_size or "nao encontrado" }}</dd>
+                <dt>Localizacao</dt><dd>{{ company_profile.location or "nao encontrado" }}</dd>
+                <dt>Atualizado</dt><dd>{{ company_profile.retrieved_at|datetime(ui.timezone) }}</dd>
+              </dl>
+            {% else %}
+              {{ ui_components.empty_state("Perfil da empresa nao encontrado.", "Adicione informacoes publicas oficiais ou anotacoes locais.", icon="info") }}
+            {% endif %}
+          </div>
+
+          <form class="form-card" action="/jobs/{{ job.id }}/company/profile" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <h3>Salvar perfil</h3>
+            <div class="field">
+              <label for="company_name">Nome</label>
+              <input id="company_name" name="name" value="{{ (company_profile.name if company_profile else job.company.canonical_name) }}">
+            </div>
+            <div class="field">
+              <label for="official_website">Site oficial</label>
+              <input id="official_website" name="official_website" value="{{ company_profile.official_website if company_profile else '' }}">
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="industry">Setor</label>
+                <input id="industry" name="industry" value="{{ company_profile.industry if company_profile else '' }}">
+              </div>
+              <div class="field">
+                <label for="company_size">Tamanho</label>
+                <input id="company_size" name="company_size" value="{{ company_profile.company_size if company_profile else '' }}">
+              </div>
+            </div>
+            <div class="field">
+              <label for="company_location">Localizacao</label>
+              <input id="company_location" name="location" value="{{ company_profile.location if company_profile else '' }}">
+            </div>
+            <div class="field">
+              <label for="company_description">Descricao</label>
+              <textarea id="company_description" name="description" rows="4">{{ company_profile.description if company_profile else '' }}</textarea>
+            </div>
+            <div class="field">
+              <label for="company_sources">Fontes oficiais</label>
+              <textarea id="company_sources" name="sources" rows="3">{{ (company_profile.sources_json|json_list)|join('\n') if company_profile else '' }}</textarea>
+            </div>
+            <button type="submit">Salvar empresa</button>
+          </form>
+        </div>
+
+        <h3>Fatos e anotacoes</h3>
+        <div class="list">
+          {% for row in company_facts %}
+            {% set fact = row.fact %}
+            <article class="row">
+              <div>
+                <strong>{{ row.origin_label }} · {{ fact.category }}</strong>
+                <p>{{ fact.content }}</p>
+                {% if fact.note %}
+                  <p class="muted">{{ fact.note }}</p>
+                {% endif %}
+                {% if row.safe_url %}
+                  <a href="{{ row.safe_url }}" target="_blank" rel="noopener noreferrer">{{ row.safe_url }}</a>
+                {% endif %}
+              </div>
+              <span class="badge">{{ fact.source_date or "sem data" }}</span>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum fato registrado.", "Informacoes oficiais, relatos, inferencias e anotacoes aparecem aqui.", icon="info") }}
+          {% endfor %}
+        </div>
+
+        <form class="form-card" action="/jobs/{{ job.id }}/company/facts" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <h3>Adicionar informacao</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label for="fact_category">Categoria</label>
+              <input id="fact_category" name="category" required>
+            </div>
+            <div class="field">
+              <label for="origin_type">Origem</label>
+              <select id="origin_type" name="origin_type">
+                {% for value, text in company_origin_types.items() %}
+                  <option value="{{ value.value }}">{{ text }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="fact_content">Conteudo</label>
+            <textarea id="fact_content" name="content" rows="3" required></textarea>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="fact_source_url">URL</label>
+              <input id="fact_source_url" name="source_url">
+            </div>
+            <div class="field">
+              <label for="fact_source_date">Data</label>
+              <input id="fact_source_date" name="source_date">
+            </div>
+          </div>
+          <div class="field">
+            <label for="fact_note">Observacao</label>
+            <textarea id="fact_note" name="note" rows="2"></textarea>
+          </div>
+          <button type="submit">Adicionar informacao</button>
+        </form>
+      </section>
+
+      <section class="card" id="company-reviews">
+        <h2>Relatos de funcionarios</h2>
+        <div class="list">
+          {% for row in company_review_snapshots %}
+            {% set snapshot = row.snapshot %}
+            <article class="row">
+              <div>
+                <strong>{{ snapshot.platform }} · relatos de funcionarios</strong>
+                <p class="muted">
+                  Avaliacao {{ snapshot.overall_rating if snapshot.overall_rating is not none else "nao encontrada" }}
+                  · {{ snapshot.review_count if snapshot.review_count is not none else "quantidade nao encontrada" }}
+                  · {{ snapshot.period or "periodo nao encontrado" }}
+                </p>
+                {% if snapshot.positives_json|json_list %}
+                  <p>Pontos positivos: {{ (snapshot.positives_json|json_list)|join(" · ") }}</p>
+                {% endif %}
+                {% if snapshot.negatives_json|json_list %}
+                  <p>Pontos negativos: {{ (snapshot.negatives_json|json_list)|join(" · ") }}</p>
+                {% endif %}
+                {% if row.safe_url %}
+                  <a href="{{ row.safe_url }}" target="_blank" rel="noopener noreferrer">{{ row.safe_url }}</a>
+                {% endif %}
+              </div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum relato importado.", "Snapshots manuais de avaliacoes aparecem separados de informacoes oficiais.", icon="info") }}
+          {% endfor %}
+        </div>
+
+        <form class="form-card" action="/jobs/{{ job.id }}/company/reviews" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <h3>Adicionar snapshot</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label for="review_platform">Plataforma</label>
+              <input id="review_platform" name="platform" required>
+            </div>
+            <div class="field">
+              <label for="overall_rating">Avaliacao geral</label>
+              <input id="overall_rating" name="overall_rating" inputmode="decimal">
+            </div>
+            <div class="field">
+              <label for="review_count">Quantidade</label>
+              <input id="review_count" name="review_count" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="review_period">Periodo</label>
+              <input id="review_period" name="period">
+            </div>
+          </div>
+          <div class="field">
+            <label for="positives">Pontos positivos</label>
+            <textarea id="positives" name="positives" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label for="negatives">Pontos negativos</label>
+            <textarea id="negatives" name="negatives" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label for="review_source_url">Origem</label>
+            <input id="review_source_url" name="source_url">
+          </div>
+          <div class="field">
+            <label for="source_note">Observacao</label>
+            <textarea id="source_note" name="source_note" rows="2"></textarea>
+          </div>
+          <button type="submit">Adicionar relatos</button>
+        </form>
+      </section>
+
+      <section class="card" id="interview-preparation">
+        <div class="section-heading">
+          <div>
+            <h2>Preparacao de entrevista</h2>
+            <p>Resumo gerado com vaga, perfil ativo e empresa local.</p>
+          </div>
+          <form class="inline" action="/jobs/{{ job.id }}/interview-preparation" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="secondary" type="submit">Gerar preparacao</button>
+          </form>
+        </div>
+        {% if latest_interview_preparation %}
+          <p>{{ latest_interview_preparation.summary }}</p>
+          <p class="muted">Gerado em {{ latest_interview_preparation.generated_at|datetime(ui.timezone) }}</p>
+          {% set prep_groups = [
+            ("Perguntas provaveis", latest_interview_preparation.likely_questions_json),
+            ("Experiencias relevantes", latest_interview_preparation.relevant_experiences_json),
+            ("Lacunas", latest_interview_preparation.gaps_json),
+            ("Perguntas para o entrevistador", latest_interview_preparation.interviewer_questions_json),
+            ("Checklist", latest_interview_preparation.checklist_json),
+            ("Fontes utilizadas", latest_interview_preparation.sources_json),
+          ] %}
+          <div class="requirement-groups">
+            {% for title, raw_items in prep_groups %}
+              <section>
+                <h3>{{ title }}</h3>
+                <ul>
+                  {% for item in raw_items|json_list %}
+                    <li>{{ item.label if item is mapping and item.label else item }}</li>
+                  {% endfor %}
+                </ul>
+              </section>
+            {% endfor %}
+          </div>
+        {% else %}
+          {{ ui_components.empty_state("Preparacao nao encontrada.", "Gere quando quiser revisar perguntas, lacunas e fontes usadas.", icon="check") }}
+        {% endif %}
+      </section>
     </div>
 
     <aside class="detail-aside">

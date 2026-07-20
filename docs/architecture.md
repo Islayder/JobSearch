@@ -20,6 +20,8 @@ SQLite como banco e separa camadas por responsabilidade:
 - Revisao e candidaturas: politica central de estados, fila manual, guardas,
   historico local e redutor de timeline.
 - Agenda local: prazos, entrevistas, testes e follow-ups sem calendario externo.
+- Inteligencia de empresas: perfil local, fatos por origem, relatos informativos
+  e preparacao deterministica de entrevista.
 - Interface web local: FastAPI, Jinja2 e HTML/CSS server-side para operar o
   mesmo banco local pelo navegador.
 - Importacao revisada de curriculo: extracao local de PDF/DOCX/TXT/Markdown,
@@ -40,6 +42,9 @@ flowchart LR
     F --> P
     P --> X["Compatibilidade vaga-curriculo"]
     X --> V["Revisao manual"]
+    F --> CI["Empresa e entrevista"]
+    P --> CI
+    CI --> W
     R --> V
     V --> A["Agenda local"]
     V --> I["CLI"]
@@ -85,11 +90,14 @@ Docker obrigatorio.
 12. Na web, `/profile/resume/import` extrai PDF/DOCX/TXT/Markdown para
    `ResumeImportSession` e `ResumeImportCandidate`. A versao de perfil so e
    criada quando o usuario confirma itens revisados.
-13. `radar agenda` e comandos `*-agenda-event` cuidam da agenda local, sem
+13. O detalhe da vaga permite manter informacoes locais de empresa e gerar
+   preparacao de entrevista baseada na vaga, perfil ativo, comparacao atual e
+   fontes registradas, sem scraping autenticado e sem alterar candidaturas.
+14. `radar agenda` e comandos `*-agenda-event` cuidam da agenda local, sem
    Google Calendar, notificacoes ou leitura de e-mail.
-14. `radar web` inicia uma interface local em `127.0.0.1`, aplica migracoes
+15. `radar web` inicia uma interface local em `127.0.0.1`, aplica migracoes
    antes de servir paginas e reutiliza os mesmos servicos de dominio da CLI.
-15. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
+16. `radar evaluate-all`, `radar reevaluate-jobs`, `radar list-jobs`,
    `radar show-job`, `radar stats`, `radar boards` e `radar source-health`
    consultam ou atualizam o banco.
 
@@ -100,6 +108,12 @@ A web e organizada em rotas por area (`dashboard`, `jobs`, `applications`,
 `web.queries`. Rotas devem ser finas: validam entrada web, chamam servicos de
 dominio e renderizam templates. Regras de estado, compatibilidade, agenda e
 candidaturas permanecem nos servicos compartilhados com a CLI.
+
+O modulo `radar_vagas.company_intelligence` concentra o cadastro local de
+empresa e a preparacao de entrevista. Ele nao possui cliente HTTP proprio, nao
+usa sessao autenticada e nao cria eventos ou candidaturas automaticamente. Toda
+afirmacao e mantida com origem explicita: informacao oficial, relato de
+funcionarios, inferencia do Radar ou anotacao do usuario.
 
 O fluxo de importacao revisada de curriculo fica em `radar_vagas.resume_import`.
 Ele separa seguranca de arquivo, extracao por formato, atribuicao de secoes,

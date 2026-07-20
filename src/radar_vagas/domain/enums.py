@@ -225,6 +225,13 @@ class CollectionAuthority(ReadableEnum):
     SINGLE_PAGE = "SINGLE_PAGE"
 
 
+class CompanyInformationSourceType(ReadableEnum):
+    OFFICIAL_INFO = "OFFICIAL_INFO"
+    EMPLOYEE_REPORT = "EMPLOYEE_REPORT"
+    RADAR_INFERENCE = "RADAR_INFERENCE"
+    USER_NOTE = "USER_NOTE"
+
+
 class RelevanceStatus(ReadableEnum):
     CORE = "CORE"
     ADJACENT = "ADJACENT"

@@ -274,6 +274,7 @@ ignorados.
 - `docs/application-tracking.md`
 - `docs/application-history-import.md`
 - `docs/calendar.md`
+- `docs/company-intelligence.md`
 - `docs/web-interface.md`
 - `docs/design-system.md`
 - `docs/local-setup.md`

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Iterable
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,15 +16,28 @@ from radar_vagas.applications.review import (
     unshortlist_job,
 )
 from radar_vagas.calendar.service import create_event
+from radar_vagas.company_intelligence.service import (
+    CompanyFactInput,
+    CompanyProfileInput,
+    CompanyReviewSnapshotInput,
+    add_company_fact,
+    add_company_review_snapshot,
+    generate_interview_preparation,
+    latest_interview_preparation,
+    parse_company_information_source_type,
+    upsert_company_profile,
+)
 from radar_vagas.config.loaders import load_ui_config
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
     CareerEventSource,
     CareerEventType,
+    CompanyInformationSourceType,
     EmploymentType,
     WorkModel,
     parse_enum_value,
 )
+from radar_vagas.domain.errors import RadarError
 from radar_vagas.profile.service import (
     compare_job_to_profile,
     comparison_freshness,
@@ -160,6 +174,11 @@ def job(
             "dismiss_reasons": DISMISS_REASONS,
             "event_types": CAREER_EVENT_LABELS,
             "application_url": safe_external_url(item.application_url),
+            "company_profile": item.company.intelligence_profile,
+            "company_facts": _company_fact_rows(item.company.facts),
+            "company_review_snapshots": _review_snapshot_rows(item.company.review_snapshots),
+            "company_origin_types": COMPANY_ORIGIN_TYPE_LABELS,
+            "latest_interview_preparation": latest_interview_preparation(item),
         },
     )
 
@@ -306,6 +325,123 @@ def job_add_event(
     return redirect(f"/jobs/{job_id}", message="Evento criado.")
 
 
+@router.post("/{job_id}/company/profile")
+def job_company_profile(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    job_id: int,
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+    name: Annotated[str, Form()] = "",
+    official_website: Annotated[str, Form()] = "",
+    industry: Annotated[str, Form()] = "",
+    company_size: Annotated[str, Form()] = "",
+    location: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+    sources: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    _ = request, _csrf
+    item = job_detail(session, positive_id(job_id, "vaga"))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
+    upsert_company_profile(
+        session,
+        item.company_id,
+        CompanyProfileInput(
+            name=name or item.company.canonical_name,
+            official_website=form_value(official_website),
+            industry=form_value(industry),
+            company_size=form_value(company_size),
+            location=form_value(location),
+            description=form_value(description),
+            sources=_split_lines(sources),
+        ),
+    )
+    return redirect(f"/jobs/{job_id}", message="Perfil da empresa salvo.")
+
+
+@router.post("/{job_id}/company/facts")
+def job_company_fact(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    job_id: int,
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+    category: Annotated[str, Form()] = "",
+    content: Annotated[str, Form()] = "",
+    origin_type: Annotated[str, Form()] = CompanyInformationSourceType.OFFICIAL_INFO.value,
+    source_url: Annotated[str, Form()] = "",
+    source_date: Annotated[str, Form()] = "",
+    note: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    _ = request, _csrf
+    item = job_detail(session, positive_id(job_id, "vaga"))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
+    add_company_fact(
+        session,
+        item.company_id,
+        CompanyFactInput(
+            category=category,
+            content=content,
+            origin_type=parse_company_information_source_type(origin_type),
+            source_url=form_value(source_url),
+            source_date=form_value(source_date),
+            note=form_value(note),
+        ),
+    )
+    return redirect(f"/jobs/{job_id}", message="Informacao da empresa adicionada.")
+
+
+@router.post("/{job_id}/company/reviews")
+def job_company_review_snapshot(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    job_id: int,
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+    platform: Annotated[str, Form()] = "",
+    overall_rating: Annotated[str, Form()] = "",
+    review_count: Annotated[str, Form()] = "",
+    positives: Annotated[str, Form()] = "",
+    negatives: Annotated[str, Form()] = "",
+    period: Annotated[str, Form()] = "",
+    source_url: Annotated[str, Form()] = "",
+    source_note: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    _ = request, _csrf
+    item = job_detail(session, positive_id(job_id, "vaga"))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
+    add_company_review_snapshot(
+        session,
+        item.company_id,
+        CompanyReviewSnapshotInput(
+            platform=platform,
+            overall_rating=_optional_float(overall_rating, "avaliacao geral"),
+            review_count=_optional_int(review_count, "quantidade de relatos"),
+            positives=_split_lines(positives),
+            negatives=_split_lines(negatives),
+            period=form_value(period),
+            source_url=form_value(source_url),
+            source_note=form_value(source_note),
+        ),
+    )
+    return redirect(f"/jobs/{job_id}", message="Relatos de funcionarios adicionados.")
+
+
+@router.post("/{job_id}/interview-preparation")
+def job_interview_preparation(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    job_id: int,
+    _csrf: Annotated[None, Depends(csrf_protect)] = None,
+) -> RedirectResponse:
+    _ = request, _csrf
+    preparation = generate_interview_preparation(session, positive_id(job_id, "vaga"))
+    return redirect(
+        f"/jobs/{job_id}#interview-preparation",
+        message=f"Preparacao de entrevista {preparation.id} gerada.",
+    )
+
+
 def _comparison_identity(comparison: object | None) -> str | None:
     if comparison is None:
         return None
@@ -316,3 +452,60 @@ def _comparison_identity(comparison: object | None) -> str | None:
     import hashlib
 
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+
+
+COMPANY_ORIGIN_TYPE_LABELS = {
+    CompanyInformationSourceType.OFFICIAL_INFO: "Informacao oficial",
+    CompanyInformationSourceType.EMPLOYEE_REPORT: "Relato de funcionarios",
+    CompanyInformationSourceType.RADAR_INFERENCE: "Inferencia do Radar",
+    CompanyInformationSourceType.USER_NOTE: "Anotacao do usuario",
+}
+
+
+def _company_fact_rows(facts: Iterable[Any]) -> list[dict[str, object]]:
+    rows = []
+    for fact in sorted(facts, key=lambda item: (item.origin_type.value, item.id)):
+        rows.append(
+            {
+                "fact": fact,
+                "origin_label": COMPANY_ORIGIN_TYPE_LABELS[fact.origin_type],
+                "safe_url": safe_external_url(fact.source_url),
+            }
+        )
+    return rows
+
+
+def _review_snapshot_rows(snapshots: Iterable[Any]) -> list[dict[str, object]]:
+    rows = []
+    for snapshot in sorted(snapshots, key=lambda item: (item.created_at, item.id), reverse=True):
+        rows.append(
+            {
+                "snapshot": snapshot,
+                "safe_url": safe_external_url(snapshot.source_url),
+            }
+        )
+    return rows
+
+
+def _split_lines(value: str) -> list[str]:
+    return [item.strip() for item in value.replace(",", "\n").splitlines() if item.strip()]
+
+
+def _optional_float(value: str, label: str) -> float | None:
+    text = form_value(value)
+    if text is None:
+        return None
+    try:
+        return float(text.replace(",", "."))
+    except ValueError as exc:
+        raise RadarError(f"{label} deve ser numerico.") from exc
+
+
+def _optional_int(value: str, label: str) -> int | None:
+    text = form_value(value)
+    if text is None:
+        return None
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise RadarError(f"{label} deve ser numerico.") from exc

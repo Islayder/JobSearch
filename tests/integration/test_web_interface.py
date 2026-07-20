@@ -24,6 +24,7 @@ from radar_vagas.domain.enums import (
     CareerEventConfirmationStatus,
     CareerEventSource,
     CareerEventType,
+    CompanyInformationSourceType,
     EligibilityStatus,
     EmploymentType,
     JobStatus,
@@ -247,6 +248,110 @@ def test_web_jobs_filters_detail_actions_apply_and_xss(tmp_path: Path) -> None:
         assert persisted.review_state is not None
         assert persisted.review_state.state is ReviewState.APPLIED
         assert persisted.applications[0].stage is ApplicationStage.APPLIED
+
+
+def test_web_job_detail_company_intelligence_and_interview_preparation(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        job = _create_job(
+            session,
+            title="Estagio Produto Dados",
+            provider_identity_key="gupy:web-130",
+        )
+        job.technologies_json = '["SQL", "Power BI"]'
+        job_id = job.id
+
+    with TestClient(create_app(settings)) as client:
+        detail = client.get(f"/jobs/{job_id}")
+        assert detail.status_code == 200
+        token = _csrf(detail.text)
+
+        denied = client.post(
+            f"/jobs/{job_id}/company/facts",
+            data={
+                "category": "Produto",
+                "content": "Plataforma oficial de analytics.",
+            },
+        )
+        assert denied.status_code == 403
+
+        profile = client.post(
+            f"/jobs/{job_id}/company/profile",
+            data={
+                "csrf_token": token,
+                "name": "Acme Dados",
+                "official_website": "https://empresa.example",
+                "industry": "Tecnologia",
+                "company_size": "100-500",
+                "location": "Brasil",
+                "description": "Produto oficial de analytics.",
+                "sources": "https://empresa.example/sobre",
+            },
+            follow_redirects=False,
+        )
+        assert profile.status_code == 303
+
+        official_fact = client.post(
+            f"/jobs/{job_id}/company/facts",
+            data={
+                "csrf_token": token,
+                "category": "Produto",
+                "content": "Plataforma oficial de analytics.",
+                "origin_type": CompanyInformationSourceType.OFFICIAL_INFO.value,
+                "source_url": "https://empresa.example/produto",
+                "source_date": "2026",
+            },
+            follow_redirects=False,
+        )
+        assert official_fact.status_code == 303
+
+        note = client.post(
+            f"/jobs/{job_id}/company/facts",
+            data={
+                "csrf_token": token,
+                "category": "Nota",
+                "content": "Perguntar sobre rituais da equipe.",
+                "origin_type": CompanyInformationSourceType.USER_NOTE.value,
+            },
+            follow_redirects=False,
+        )
+        assert note.status_code == 303
+
+        reviews = client.post(
+            f"/jobs/{job_id}/company/reviews",
+            data={
+                "csrf_token": token,
+                "platform": "Portal Ficticio",
+                "overall_rating": "4,1",
+                "review_count": "12",
+                "positives": "Aprendizado\nMentoria",
+                "negatives": "Processos em maturacao",
+                "period": "2026",
+                "source_url": "https://reviews.example/acme",
+            },
+            follow_redirects=False,
+        )
+        assert reviews.status_code == 303
+
+        preparation = client.post(
+            f"/jobs/{job_id}/interview-preparation",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert preparation.status_code == 303
+
+        refreshed = client.get(f"/jobs/{job_id}")
+        assert refreshed.status_code == 200
+        assert "Informacao oficial" in refreshed.text
+        assert "Anotacao do usuario" in refreshed.text
+        assert "Relato de funcionarios" in refreshed.text
+        assert "Preparacao de entrevista" in refreshed.text
+        assert "Plataforma oficial de analytics." in refreshed.text
+        assert "Como voce explicaria sua experiencia com SQL" in refreshed.text
 
 
 def test_web_applications_agenda_profile_and_sources(tmp_path: Path) -> None:

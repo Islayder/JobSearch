@@ -16,6 +16,9 @@ erDiagram
     SOURCE_RUN ||--o{ DISCOVERY_HIT : observed
     COMPANY ||--o{ COMPANY_ALIAS : has
     COMPANY ||--o{ COMPANY_BOARD : owns
+    COMPANY ||--o| COMPANY_PROFILE : described_by
+    COMPANY ||--o{ COMPANY_FACT : documented_by
+    COMPANY ||--o{ COMPANY_REVIEW_SNAPSHOT : reviewed_in
     COMPANY ||--o{ JOB : offers
     SEARCH_QUERY ||--o{ DISCOVERY_HIT : finds
     JOB ||--o{ POSTING : groups
@@ -44,7 +47,9 @@ erDiagram
     PROFESSIONAL_PROFILE_VERSION ||--o{ RESUME_IMPORT_SESSION : confirmed_from
     RESUME_IMPORT_SESSION ||--o{ RESUME_IMPORT_CANDIDATE : reviews
     JOB ||--o{ JOB_PROFILE_COMPARISON : compared_by
+    JOB ||--o{ INTERVIEW_PREPARATION : prepares
     PROFESSIONAL_PROFILE_VERSION ||--o{ JOB_PROFILE_COMPARISON : used_in
+    PROFESSIONAL_PROFILE_VERSION ||--o{ INTERVIEW_PREPARATION : used_in
     JOB_PROFILE_COMPARISON ||--o{ JOB_REQUIREMENT_MATCH : explains
     FILE_IMPORT_BATCH ||--o{ IMPORT_ITEM_AUDIT : audits
     POSTING ||--o{ IMPORT_ITEM_AUDIT : traced_by
@@ -58,6 +63,21 @@ contadores de itens.
 
 `Company` guarda a organizacao canonica. `CompanyAlias` guarda variacoes
 normalizadas do nome.
+
+`CompanyProfile` guarda um perfil local da empresa com nome exibido, site
+oficial, setor, tamanho, localizacao, descricao, fontes e `retrieved_at`.
+Ele e alimentado manualmente ou por importacao local de informacoes publicas,
+sem buscar paginas autenticadas.
+
+`CompanyFact` guarda afirmacoes pontuais sobre a empresa, sempre separadas por
+origem: `OFFICIAL_INFO`, `EMPLOYEE_REPORT`, `RADAR_INFERENCE` ou `USER_NOTE`.
+Cada item tem categoria, conteudo, URL opcional, data opcional e observacao.
+As categorias nao devem ser misturadas na exibicao ou na preparacao.
+
+`CompanyReviewSnapshot` guarda um recorte informativo de relatos de
+funcionarios. Ele pode ter plataforma, avaliacao geral, quantidade de relatos,
+pontos positivos, pontos negativos, periodo, origem e a indicacao explicita de
+que sao relatos de funcionarios, nao informacao oficial.
 
 `CompanyBoard` mapeia boards publicos configurados. Campos principais:
 
@@ -201,6 +221,13 @@ detalhada. A identidade da comparacao usa vaga, versao do perfil, versao das
 regras e hash do conteudo da vaga, preservando historico quando a vaga ou as
 regras mudam.
 
+`InterviewPreparation` guarda uma preparacao local e deterministica para uma
+vaga, usando a vaga, a empresa, a versao de perfil ativa quando existir e a
+comparacao atual quando disponivel. Campos principais: resumo, perguntas
+provaveis, experiencias relevantes, lacunas, perguntas para o entrevistador,
+checklist, fontes utilizadas e `generated_at`. Quando uma informacao nao existe,
+o valor exibido deve ser `nao encontrado`.
+
 `CareerEvent` guarda agenda local de prazos, entrevistas, testes, cases,
 documentos, ofertas e follow-ups. Ele pode apontar para uma vaga, uma
 candidatura, ambas ou nenhuma delas. `CareerEventAudit` registra criacao,
@@ -217,6 +244,11 @@ coleta, tipo, modalidade, cidade, empresa e nota.
 
 `CompanyBoard.key` e unico quando presente. Boards antigos sem key podem ser
 migrados e atualizados posteriormente.
+
+`CompanyProfile.company_id` e unico. Fatos de empresa usam indice por empresa e
+tipo de origem. Snapshots de relatos usam indices por empresa, plataforma e
+data de criacao. Preparacoes de entrevista usam indices por vaga, empresa,
+versao de perfil e data de geracao.
 
 `Application.application_key` e unico quando presente e evita duplicar
 candidaturas importadas por identidade de plataforma, URL ou referencia externa.
