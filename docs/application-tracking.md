@@ -30,7 +30,9 @@ radar show-application 1
 A interface web permite filtrar candidaturas por empresa, status, etapa,
 plataforma, periodo e atalhos operacionais: aguardando retorno, teste/case,
 entrevista, oferta, rejeitadas e retiradas. O detalhe mostra dados da vaga,
-timeline, agenda ligada, notas e pagina oficial quando houver URL segura.
+timeline vertical, agenda ligada, proxima acao, notas e pagina oficial quando
+houver URL segura. Eventos terminais continuam separados visualmente e exigem
+confirmacao explicita.
 
 No filtro web por periodo, `from_date` e `to_date` sao interpretados no timezone
 configurado da interface. `from_date` e o inicio local do dia; `to_date` inclui

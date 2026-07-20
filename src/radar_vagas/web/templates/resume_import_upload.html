@@ -1,13 +1,8 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Importar curriculo - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Importar curriculo</h1>
-      <p>Extraia dados de PDF, DOCX, TXT ou Markdown e revise cada item antes de criar o perfil.</p>
-    </div>
-    <a class="button secondary" href="/profile/resume/imports">Rascunhos</a>
-  </section>
+  {{ ui_components.page_header() }}
 
   <section class="resume-stepper" aria-label="Etapas da importacao">
     <span class="active">1. Enviar arquivo</span>
@@ -16,24 +11,45 @@
   </section>
 
   {% if resume_error %}
-    <div class="resume-alert danger">{{ resume_error }}</div>
+    <div class="resume-alert danger" role="alert">{{ resume_error }}</div>
   {% endif %}
 
-  <form class="resume-upload-panel" action="/profile/resume/import" method="post" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label class="resume-dropzone" for="resume_file" tabindex="0">
-      <strong>Selecionar curriculo</strong>
-      <span>PDF textual, DOCX, TXT ou Markdown ate 8 MB. Arquivos protegidos, antigos .doc e PDFs sem texto nao sao importados.</span>
-      <input id="resume_file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
-    </label>
-    <div class="resume-upload-actions">
-      <button type="submit">Extrair para revisao</button>
-      <a class="button secondary" href="/profile">Voltar ao perfil</a>
-    </div>
-  </form>
+  <section class="content-grid two">
+    <form class="resume-upload-panel" action="/profile/resume/import" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="resume-dropzone" for="resume_file" tabindex="0">
+        <span class="empty-state-icon" aria-hidden="true">PDF</span>
+        <strong>Selecionar curriculo</strong>
+        <span data-dropzone-label>PDF textual, DOCX, TXT ou Markdown ate 8 MB. Arquivos protegidos, antigos .doc e PDFs sem texto nao sao importados.</span>
+        <input id="resume_file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
+      </label>
+      <div class="resume-upload-actions">
+        <button type="submit">Extrair para revisao</button>
+        <a class="button button-secondary" href="/profile">Voltar ao perfil</a>
+      </div>
+    </form>
+
+    <aside class="card">
+      <h2>Privacidade do importador</h2>
+      <p>Tudo e processado localmente. O Radar nao envia curriculo, nao faz OCR e nao guarda o arquivo bruto.</p>
+      <div class="badge-row">
+        <span class="badge badge-info">PDF textual</span>
+        <span class="badge badge-info">DOCX</span>
+        <span class="badge badge-info">TXT</span>
+        <span class="badge badge-info">Markdown</span>
+      </div>
+      <p class="muted">As informacoes extraidas precisam ser revisadas antes de criar perfil.</p>
+    </aside>
+  </section>
 
   <section class="card">
-    <h2>Rascunhos recentes</h2>
+    <div class="section-heading">
+      <div>
+        <h2>Rascunhos recentes</h2>
+        <p>Importacoes locais aguardando revisao, confirmadas ou descartadas.</p>
+      </div>
+      <a href="/profile/resume/imports">Ver todos</a>
+    </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Arquivo</th><th>Formato</th><th>Status</th><th>Itens</th><th>Atualizado</th><th>Acao</th></tr></thead>
@@ -45,10 +61,10 @@
               <td><span class="badge status-{{ item.status|status_class }}">{{ item.status|label }}</span></td>
               <td>{{ item.candidate_count }}</td>
               <td>{{ item.updated_at|datetime(ui.timezone) }}</td>
-              <td><a class="button secondary" href="/profile/resume/imports/{{ item.import_key }}/review">Abrir</a></td>
+              <td><a class="button button-secondary" href="/profile/resume/imports/{{ item.import_key }}/review">Abrir</a></td>
             </tr>
           {% else %}
-            <tr><td colspan="6" class="empty">Nenhum rascunho recente.</td></tr>
+            <tr><td colspan="6">{{ ui_components.empty_state("Nenhum rascunho recente.", "Envie um curriculo para iniciar uma revisao humana.", icon="upload") }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

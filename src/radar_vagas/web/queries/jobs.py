@@ -134,6 +134,7 @@ def jobs_page(
     )
     items = list(session.scalars(statement).unique().all())
     _attach_current_comparisons(session, items)
+    _attach_list_state(items)
     items = _apply_current_comparison_filters(items, filters)
     items = _sort_loaded_jobs(items, selected_sort)
     total = len(items)
@@ -179,6 +180,12 @@ def historical_comparisons(job: Job) -> list[JobProfileComparison]:
 
 def review_state_for(job: Job) -> ReviewState:
     return current_review_state(job)
+
+
+def _attach_list_state(jobs: list[Job]) -> None:
+    for job in jobs:
+        job.effective_review_state = current_review_state(job)  # type: ignore[attr-defined]
+        job.valid_actions = valid_job_actions(job)  # type: ignore[attr-defined]
 
 
 def valid_job_actions(job: Job) -> dict[str, bool]:

@@ -68,6 +68,12 @@ radar web --port 8001 --no-open-browser
 A interface abre em `http://127.0.0.1:8000` por padrao. Ela e local-first,
 aplica migracoes antes de iniciar e nao deve ser exposta em rede.
 
+O visual da interface usa CSS modular e assets locais. Para validar o redesign
+durante desenvolvimento, abra dashboard, vagas, detalhe de vaga, candidaturas,
+agenda, perfil, importador de curriculo, fontes e uma pagina de erro em
+larguras desktop, tablet e mobile. O drawer mobile deve abrir pelo botao do
+header, fechar por Escape e clique fora, e manter foco visivel.
+
 Para validar fluxos web manualmente em banco temporario, conclua o onboarding,
 importe um curriculo PDF textual ou DOCX, revise itens, edite um candidato,
 remova/restaure outro, confirme o perfil, descarte um rascunho separado, crie

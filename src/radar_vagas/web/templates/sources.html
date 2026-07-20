@@ -1,33 +1,40 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Fontes - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Fontes</h1>
-      <p>Saude local de boards, consultas e execucoes.</p>
-    </div>
+  {% set header_action %}
     <form class="inline" action="/sources/collect-search-plan" method="post" data-confirm="Executar coleta manual agora?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button type="submit" {% if collection_status.state == "running" %}disabled{% endif %}>Coletar agora</button>
+      <button type="submit" data-collection-submit {% if collection_status.state == "running" %}disabled{% endif %}>
+        {% if collection_status.state == "running" %}Coleta em andamento{% else %}Executar coleta{% endif %}
+      </button>
     </form>
-  </section>
+  {% endset %}
+  {{ ui_components.page_header(action=header_action) }}
 
-  <section class="metrics" aria-label="Fontes">
-    <div class="metric"><strong>{{ sources|length }}</strong><span>fontes</span></div>
-    <div class="metric"><strong>{{ boards|length }}</strong><span>boards</span></div>
-    <div class="metric"><strong>{{ queries|length }}</strong><span>consultas</span></div>
-    <div class="metric"><strong>{{ failed_runs }}</strong><span>em falha atual</span></div>
+  <section class="metrics" aria-label="Saude das fontes">
+    {{ ui_components.metric(health_counts.healthy, "Saudaveis", "Ultima execucao sem falhas.", icon="check") }}
+    {{ ui_components.metric(health_counts.warning, "Avisos", "Itens ignorados ou atencao.", icon="alert") }}
+    {{ ui_components.metric(health_counts.failing, "Falhas", "Ultima execucao falhou.", icon="alert") }}
+    {{ ui_components.metric(health_counts.never_run, "Nunca executadas", "Sem historico local.", icon="database") }}
+    {{ ui_components.metric(sources|length + boards|length + queries|length, "Itens monitorados", "Fontes, boards e consultas.", icon="database") }}
   </section>
 
   <section class="card" data-collection-status>
-    <h2>Coleta manual</h2>
-    <p>
+    <div class="section-heading">
+      <div>
+        <h2>Coleta manual</h2>
+        <p>Execucao local do plano de busca, uma por vez.</p>
+      </div>
       <span class="badge {{ collection_status.state }}" data-collection-state>{{ collection_status.state }}</span>
-      <span data-collection-message>{{ collection_status.message }}</span>
-    </p>
+    </div>
+    <p data-collection-message>{{ collection_status.message }}</p>
     <p class="muted">
       Encontradas <span data-collection-found>{{ collection_status.found }}</span> · novas <span data-collection-created>{{ collection_status.created }}</span>
     </p>
+    {% if collection_status.state == "running" %}
+      {{ ui_components.skeleton("Coleta em andamento") }}
+    {% endif %}
     <div data-collection-errors>
       {% for error in collection_status.errors %}
         <p class="notice error">{{ error }}</p>
@@ -35,53 +42,49 @@
     </div>
   </section>
 
-  <section class="card">
-    <h2>Situacao atual</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Tipo</th><th>Item</th><th>Estado</th><th>Ultima execucao</th><th>Sucesso</th><th>Falha</th><th>Itens</th><th>Mensagem</th></tr>
-        </thead>
-        <tbody>
-          {% for row in health_rows %}
-            <tr>
-              <td>{{ row.kind }}</td>
-              <td>{{ row.label }}<div class="muted">{{ row.key }}</div></td>
-              <td><span class="badge {{ row.state }}">{{ row.state }}</span></td>
-              <td>{{ row.last_run.started_at|datetime(ui.timezone) if row.last_run else "-" }}</td>
-              <td>{{ row.last_success_at|datetime(ui.timezone) }}</td>
-              <td>{{ row.last_failed_at|datetime(ui.timezone) }}</td>
-              <td>{{ row.items_found }} / {{ row.items_created }}{% if row.items_skipped %}<div class="muted">itens ignorados: {{ row.items_skipped }}</div>{% endif %}</td>
-              <td>{{ row.message }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="8" class="empty">Nenhum item de fonte registrado.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+  <section class="content-grid two">
+    <section class="card">
+      <h2>Fontes, boards e consultas</h2>
+      <div class="list">
+        {% for row in health_rows %}
+          <article class="source-row">
+            <div>
+              <span class="badge {{ row.state }}">{{ row.state }}</span>
+              <h3>{{ row.kind }} · {{ row.label }}</h3>
+              <p class="muted">{{ row.key }}</p>
+              <p>{{ row.message }}</p>
+            </div>
+            <div>
+              <p><strong>Ultima execucao</strong><br>{{ row.last_run.started_at|datetime(ui.timezone) if row.last_run else "-" }}</p>
+              <p><strong>Sucesso</strong><br>{{ row.last_success_at|datetime(ui.timezone) }}</p>
+              <p><strong>Falhas</strong><br>{{ row.consecutive_failures }}</p>
+              <p><strong>Itens</strong><br>{{ row.items_found }} encontrados · {{ row.items_created }} criados{% if row.items_skipped %}<br><span class="muted">itens ignorados: {{ row.items_skipped }}</span>{% endif %}</p>
+            </div>
+          </article>
+        {% else %}
+          {{ ui_components.empty_state("Nenhum item de fonte registrado.", "Fontes e consultas aparecem depois da configuracao ou primeira coleta.", icon="database") }}
+        {% endfor %}
+      </div>
+    </section>
 
-  <section class="card">
-    <h2>Execucoes recentes</h2>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Fonte</th><th>Status</th><th>Itens</th><th>Criados</th><th>Inicio</th><th>Mensagem</th></tr></thead>
-        <tbody>
-          {% for run in recent_runs %}
-            <tr>
-              <td>{{ run.source.name }}</td>
-              <td><span class="badge {{ run.status|status_class }}">{{ run.status|label }}</span></td>
-              <td>{{ run.items_found }}</td>
-              <td>{{ run.items_created }}</td>
-              <td>{{ run.started_at|datetime(ui.timezone) }}</td>
-              <td>{{ run.error_message|sanitize if run.error_message else "-" }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="6" class="empty">Nenhuma execucao registrada.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <aside class="card">
+      <h2>Execucoes recentes</h2>
+      <div class="list">
+        {% for run in recent_runs %}
+          <article class="row">
+            <strong>{{ run.source.name }}</strong>
+            <div class="badge-row">
+              <span class="badge {{ run.status|status_class }}">{{ run.status|label }}</span>
+              <span class="badge">{{ run.items_found }} encontrados</span>
+              <span class="badge">{{ run.items_created }} criados</span>
+            </div>
+            <p class="muted">{{ run.started_at|datetime(ui.timezone) }}</p>
+            <p>{{ run.error_message|sanitize if run.error_message else "-" }}</p>
+          </article>
+        {% else %}
+          {{ ui_components.empty_state("Nenhuma execucao registrada.", "As execucoes persistidas aparecem aqui.", icon="database") }}
+        {% endfor %}
+      </div>
+    </aside>
   </section>
 {% endblock %}

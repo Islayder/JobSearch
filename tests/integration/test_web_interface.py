@@ -124,6 +124,64 @@ def test_web_onboarding_manual_profile_and_csrf(tmp_path: Path) -> None:
         assert (settings.config_dir / "ui.local.yaml").exists()
 
 
+def test_web_app_shell_navigation_dashboard_and_job_cards(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+    with session_scope(settings) as session:
+        _create_job(
+            session,
+            title="Estagio Shell Design",
+            provider_identity_key="gupy:web-120",
+        )
+
+    with TestClient(create_app(settings)) as client:
+        dashboard = client.get("/")
+        assert dashboard.status_code == 200
+        assert 'class="app-shell"' in dashboard.text
+        assert '<aside class="sidebar"' in dashboard.text
+        assert 'class="app-header"' in dashboard.text
+        assert '<main class="app-main"' in dashboard.text
+        assert '<footer class="app-footer"' in dashboard.text
+        assert "Ir para o conteudo" in dashboard.text
+        assert "data-sidebar-toggle" in dashboard.text
+        assert 'aria-controls="app-sidebar"' in dashboard.text
+        assert "data-theme-toggle" in dashboard.text
+        assert 'name="q" placeholder="Pesquisar vagas ou empresas"' in dashboard.text
+        assert 'href="/" aria-current="page"' in dashboard.text
+        assert "O que precisa da sua atencao" in dashboard.text
+        assert "Proximos compromissos" in dashboard.text
+        assert "Saude das fontes" in dashboard.text
+
+        jobs = client.get("/jobs?q=Acme")
+        assert jobs.status_code == 200
+        assert 'href="/jobs" aria-current="page"' in jobs.text
+        assert 'id="job-filters"' in jobs.text
+        assert "Filtros avancados" in jobs.text
+        assert "filter-chip" in jobs.text
+        assert "job-card" in jobs.text
+        assert "Estagio Shell Design" in jobs.text
+        assert "Ver detalhes" in jobs.text
+
+
+def test_web_not_found_uses_redesigned_error_shell(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _write_runtime_config(settings)
+    _create_active_profile(settings, tmp_path)
+
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/rota-inexistente-5b4")
+
+    assert response.status_code == 404
+    assert 'class="app-shell"' in response.text
+    assert '<aside class="sidebar"' in response.text
+    assert 'class="app-header"' in response.text
+    assert '<main class="app-main"' in response.text
+    assert '<footer class="app-footer"' in response.text
+    assert "Algo impediu a acao" in response.text
+    assert "Not Found" in response.text
+
+
 def test_web_jobs_filters_detail_actions_apply_and_xss(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _write_runtime_config(settings)

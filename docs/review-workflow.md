@@ -50,6 +50,11 @@ aplicadas, aguardando revisao, descartadas e encerradas. A lista padrao esconde
 aplicadas, descartadas, fechadas e expiradas ate que a aba/filtro correspondente
 seja escolhido.
 
+Visualmente, `/jobs` usa filtros agrupados, chips de filtros ativos, cards de
+vaga e acoes rapidas validas por estado. O detalhe da vaga separa acao oficial,
+acoes secundarias, descarte, candidatura manual, agenda e compatibilidade, sem
+criar novas transicoes de dominio.
+
 Repetir uma acao que nao muda o estado efetivo nao cria evento duplicado.
 Transicoes contraditorias falham com erro claro antes de gravar alteracoes.
 

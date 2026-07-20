@@ -1,0 +1,124 @@
+{% import "components/icons.html" as icons %}
+
+{% macro button(label, href=None, variant="primary", icon=None, type="button", disabled=False, extra_class="") -%}
+  {% if href %}
+    <a class="button button-{{ variant }} {{ extra_class }}" href="{{ href }}">
+      {% if icon %}{{ icons.icon(icon) }}{% endif %}
+      <span>{{ label }}</span>
+    </a>
+  {% else %}
+    <button class="button button-{{ variant }} {{ extra_class }}" type="{{ type }}" {% if disabled %}disabled{% endif %}>
+      {% if icon %}{{ icons.icon(icon) }}{% endif %}
+      <span>{{ label }}</span>
+    </button>
+  {% endif %}
+{%- endmacro %}
+
+{% macro badge(text, tone="neutral", icon=None) -%}
+  <span class="badge badge-{{ tone }}">
+    {% if icon %}{{ icons.icon(icon) }}{% endif %}
+    <span>{{ text }}</span>
+  </span>
+{%- endmacro %}
+
+{% macro metric(value, label, hint, href=None, icon="info", tone="neutral") -%}
+  {% set tag = "a" if href else "div" %}
+  <{{ tag }} class="metric metric-{{ tone }}{% if href %} metric-link{% endif %}" {% if href %}href="{{ href }}"{% endif %}>
+    <span class="metric-icon">{{ icons.icon(icon) }}</span>
+    <span class="metric-value">{{ value }}</span>
+    <span class="metric-label">{{ label }}</span>
+    <span class="metric-hint">{{ hint }}</span>
+  </{{ tag }}>
+{%- endmacro %}
+
+{% macro empty_state(title, body, action_label=None, action_href=None, icon="info") -%}
+  <div class="empty-state">
+    <span class="empty-state-icon">{{ icons.icon(icon) }}</span>
+    <h3>{{ title }}</h3>
+    <p>{{ body }}</p>
+    {% if action_label and action_href %}
+      {{ button(action_label, href=action_href, variant="secondary", icon="arrow-right") }}
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro alert(message, tone="info", title=None, dismissible=True) -%}
+  <div class="alert alert-{{ tone }}" {% if tone == "danger" or tone == "error" %}role="alert"{% else %}role="status"{% endif %}>
+    <span class="alert-icon">{{ icons.icon("alert" if tone in ["warning", "danger", "error"] else "info") }}</span>
+    <div>
+      {% if title %}<strong>{{ title }}</strong>{% endif %}
+      <p>{{ message }}</p>
+    </div>
+    {% if dismissible %}
+      <button class="icon-button alert-close" type="button" aria-label="Fechar mensagem" data-dismiss-alert>{{ icons.icon("close") }}</button>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro breadcrumb(items) -%}
+  <nav class="breadcrumb" aria-label="Caminho">
+    <ol>
+      {% for item in items %}
+        <li>
+          {% if item.href %}
+            <a href="{{ item.href }}">{{ item.label }}</a>
+          {% else %}
+            <span>{{ item.label }}</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  </nav>
+{%- endmacro %}
+
+{% macro page_header(title=None, description=None, action=None) -%}
+  <section class="page-header">
+    <div>
+      {{ breadcrumb(page_chrome.breadcrumbs) }}
+      <h1>{{ title or page_chrome.title }}</h1>
+      <p>{{ description or page_chrome.description }}</p>
+    </div>
+    {% if action %}
+      <div class="page-header-actions">{{ action }}</div>
+    {% elif page_chrome.primary_action %}
+      <div class="page-header-actions">
+        {{ button(page_chrome.primary_action.label, href=page_chrome.primary_action.href, icon=page_chrome.primary_action.icon) }}
+      </div>
+    {% endif %}
+  </section>
+{%- endmacro %}
+
+{% macro filter_chip(label, href=None) -%}
+  {% if href %}
+    <a class="filter-chip" href="{{ href }}">{{ label }} <span aria-hidden="true">x</span></a>
+  {% else %}
+    <span class="filter-chip">{{ label }}</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro pagination(page) -%}
+  <nav class="pagination" aria-label="Paginacao">
+    {% if page.has_previous %}
+      {{ button("Anterior", href=request.url.include_query_params(page=page.page - 1), variant="secondary") }}
+    {% endif %}
+    <span>Pagina {{ page.page }} de {{ page.pages }}</span>
+    {% if page.has_next %}
+      {{ button("Proxima", href=request.url.include_query_params(page=page.page + 1), variant="secondary") }}
+    {% endif %}
+  </nav>
+{%- endmacro %}
+
+{% macro timeline_item(title, meta, body=None, tone="neutral", icon="info") -%}
+  <div class="timeline-item timeline-{{ tone }}">
+    <span class="timeline-icon">{{ icons.icon(icon) }}</span>
+    <div>
+      <strong>{{ title }}</strong>
+      <span>{{ meta }}</span>
+      {% if body %}<p>{{ body }}</p>{% endif %}
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro skeleton(label="Carregando") -%}
+  <div class="skeleton" aria-busy="true"><span>{{ label }}</span></div>
+{%- endmacro %}

@@ -1,101 +1,105 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Candidatura {{ application.id }} - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>{{ application.job.canonical_title }}</h1>
-      <p>{{ application.job.company.canonical_name }} · {{ application.status|label }} · {{ application.stage|label }}</p>
-    </div>
+  {% set header_action %}
     <div class="actions">
       {% if application.application_url %}
-        <a class="button" href="{{ application.application_url }}" target="_blank" rel="noopener noreferrer">Pagina oficial</a>
+        <a class="button button-primary" href="{{ application.application_url }}" target="_blank" rel="noopener noreferrer">Pagina oficial</a>
       {% endif %}
-      <a class="button secondary" href="/jobs/{{ application.job.id }}">Abrir vaga</a>
+      <a class="button button-secondary" href="/jobs/{{ application.job.id }}">Abrir vaga</a>
     </div>
+  {% endset %}
+  {{ ui_components.page_header(title=application.job.canonical_title, description=application.job.company.canonical_name ~ " · " ~ (application.status|label) ~ " · " ~ (application.stage|label), action=header_action) }}
+
+  <section class="metrics" aria-label="Resumo da candidatura">
+    {{ ui_components.metric(application.status|label, "Status", "Estado resumido derivado da timeline.", icon="check") }}
+    {{ ui_components.metric(application.stage|label, "Etapa atual", "Proxima acao operacional.", icon="send") }}
+    {{ ui_components.metric(application.applied_at|date(ui.timezone), "Data", "Registro manual da candidatura.", icon="calendar") }}
   </section>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Dados da candidatura</h2>
-      <p>Status: <span class="badge {{ application.status|status_class }}">{{ application.status|label }}</span></p>
-      <p>Etapa derivada: {{ application.stage|label }}</p>
-      <p>Plataforma: {{ application.platform or "-" }}</p>
-      <p>Referencia: {{ application.external_reference or "-" }}</p>
-      <p>Enviada em: {{ application.applied_at|datetime(ui.timezone) }}</p>
-      {% if application.notes %}<p>{{ application.notes }}</p>{% endif %}
-    </div>
-
-    <div class="card">
-      <h2>Atualizar fluxo</h2>
-      <div class="actions">
-        {% for event_type, text in event_shortcuts %}
-          <form class="inline" action="/applications/{{ application.id }}/events" method="post" {% if event_type in terminal_events %}data-confirm="Registrar mudanca final da candidatura?"{% endif %}>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="event_type" value="{{ event_type.value }}">
-            {% if event_type in terminal_events %}
-              <input type="hidden" name="confirm_terminal" value="on">
-            {% endif %}
-            <button class="{% if event_type in terminal_events %}danger{% else %}secondary{% endif %}" type="submit">{{ text }}</button>
-          </form>
-        {% endfor %}
-      </div>
-    </div>
-  </section>
-
-  <section class="grid">
-    <div class="card">
-      <h2>Linha do tempo</h2>
-      <div class="list">
-        {% for event in application.events|sort(attribute="occurred_at") %}
-          <div class="row">
-            <strong>{{ event.event_type|label }}</strong>
-            <div class="muted">{{ event.occurred_at|datetime(ui.timezone) }} · {{ event.source }}</div>
-            {% if event.notes %}<p>{{ event.notes }}</p>{% endif %}
-          </div>
-        {% else %}
-          <p class="empty">Nenhum evento registrado.</p>
-        {% endfor %}
-      </div>
-    </div>
-
-    <form class="card" action="/applications/{{ application.id }}/events" method="post">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <h2>Evento detalhado</h2>
-      <div class="field">
-        <label for="event_type">Tipo</label>
-        <select id="event_type" name="event_type">
-          {% for value, text in application_event_types.items() %}
-            <option value="{{ value.value }}">{{ text }}</option>
+  <section class="content-grid two">
+    <div class="section-stack">
+      <section class="card">
+        <h2>Proxima acao</h2>
+        <p>Registre apenas eventos que aconteceram fora do Radar. Acoes terminais exigem confirmacao.</p>
+        <div class="actions">
+          {% for event_type, text in event_shortcuts %}
+            <form class="inline" action="/applications/{{ application.id }}/events" method="post" {% if event_type in terminal_events %}data-confirm="Registrar mudanca final da candidatura?"{% endif %}>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="event_type" value="{{ event_type.value }}">
+              {% if event_type in terminal_events %}
+                <input type="hidden" name="confirm_terminal" value="on">
+              {% endif %}
+              <button class="{% if event_type in terminal_events %}danger{% else %}secondary{% endif %}" type="submit">{{ text }}</button>
+            </form>
           {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="occurred_at">Data/hora</label>
-        <input id="occurred_at" name="occurred_at" type="datetime-local">
-      </div>
-      <label class="check">
-        <input name="confirm_terminal" type="checkbox">
-        Confirmo se for rejeicao, oferta ou retirada
-      </label>
-      <div class="field">
-        <label for="notes">Notas</label>
-        <textarea id="notes" name="notes"></textarea>
-      </div>
-      <button type="submit">Registrar evento</button>
-    </form>
-  </section>
-
-  <section class="card">
-    <h2>Agenda ligada</h2>
-    <div class="list">
-      {% for event in application.career_events %}
-        <div class="row">
-          <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
-          <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
         </div>
-      {% else %}
-        <p class="empty">Nenhum compromisso ligado.</p>
-      {% endfor %}
+      </section>
+
+      <section class="card">
+        <h2>Timeline</h2>
+        <div class="timeline">
+          {% for event in application.events|sort(attribute="occurred_at") %}
+            {{ ui_components.timeline_item(event.event_type|label, event.occurred_at|datetime(ui.timezone) ~ " · origem " ~ event.source, event.notes, tone=event.event_type|status_class, icon="info") }}
+          {% else %}
+            {{ ui_components.empty_state("Nenhum evento registrado.", "A timeline comeca quando a candidatura e registrada ou atualizada.", icon="send") }}
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Compromissos</h2>
+        <div class="list">
+          {% for event in application.career_events %}
+            <article class="row">
+              <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
+              <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum compromisso ligado.", "Crie eventos pela vaga ou pela agenda para acompanhar datas.", "Abrir agenda", "/agenda", icon="calendar") }}
+          {% endfor %}
+        </div>
+      </section>
     </div>
+
+    <aside class="section-stack">
+      <section class="card">
+        <h2>Dados da candidatura</h2>
+        <p><strong>Empresa</strong><br>{{ application.job.company.canonical_name }}</p>
+        <p><strong>Status</strong><br><span class="badge {{ application.status|status_class }}">{{ application.status|label }}</span></p>
+        <p><strong>Etapa derivada</strong><br>{{ application.stage|label }}</p>
+        <p><strong>Plataforma</strong><br>{{ application.platform or "-" }}</p>
+        <p><strong>Referencia</strong><br>{{ application.external_reference or "-" }}</p>
+        <p><strong>Enviada em</strong><br>{{ application.applied_at|datetime(ui.timezone) }}</p>
+        {% if application.notes %}<p><strong>Notas</strong><br>{{ application.notes }}</p>{% endif %}
+      </section>
+
+      <form class="card form-card" action="/applications/{{ application.id }}/events" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h2>Evento detalhado</h2>
+        <div class="field">
+          <label for="event_type">Tipo</label>
+          <select id="event_type" name="event_type">
+            {% for value, text in application_event_types.items() %}
+              <option value="{{ value.value }}">{{ text }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="occurred_at">Data/hora</label>
+          <input id="occurred_at" name="occurred_at" type="datetime-local">
+        </div>
+        <label class="check">
+          <input name="confirm_terminal" type="checkbox">
+          Confirmo se for rejeicao, oferta ou retirada
+        </label>
+        <div class="field">
+          <label for="notes">Notas</label>
+          <textarea id="notes" name="notes"></textarea>
+        </div>
+        <button type="submit">Registrar evento</button>
+      </form>
+    </aside>
   </section>
 {% endblock %}

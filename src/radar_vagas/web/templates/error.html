@@ -1,12 +1,13 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Erro - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Algo impediu a acao</h1>
-      <p>Codigo {{ status_code }}</p>
+  {{ ui_components.page_header(title="Algo impediu a acao", description="Codigo " ~ status_code) }}
+  <section class="card error-panel">
+    <div class="notice error">{{ error_message }}</div>
+    <div class="form-actions">
+      <a class="button button-secondary" href="/">Voltar ao dashboard</a>
+      <a class="button button-secondary" href="/jobs">Abrir vagas</a>
     </div>
   </section>
-  <div class="notice error">{{ error_message }}</div>
-  <a class="button secondary" href="/">Voltar ao dashboard</a>
 {% endblock %}

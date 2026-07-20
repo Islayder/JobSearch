@@ -1,0 +1,74 @@
+{% import "components/icons.html" as icons %}
+
+{% macro sidebar(nav_items, active_key) -%}
+  <aside class="sidebar" id="app-sidebar" data-sidebar aria-label="Navegacao principal">
+    <div class="sidebar-brand">
+      <a href="/" class="brand-mark" aria-label="Radar de Vagas">
+        <span class="brand-icon">{{ icons.icon("dashboard") }}</span>
+        <span>
+          <strong>Radar de Vagas</strong>
+          <small>Organize sua busca profissional</small>
+        </span>
+      </a>
+      <button class="icon-button sidebar-close" type="button" aria-label="Fechar menu" data-sidebar-close>
+        {{ icons.icon("close") }}
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Principal">
+      {% for item in nav_items if item.section == "primary" %}
+        <a class="sidebar-link{% if active_key == item.key %} is-active{% endif %}" href="{{ item.href }}" {% if active_key == item.key %}aria-current="page"{% endif %}>
+          {{ icons.icon(item.icon) }}
+          <span>{{ item.label }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+
+    <nav class="sidebar-nav sidebar-secondary" aria-label="Secundaria">
+      {% for item in nav_items if item.section == "secondary" %}
+        <a class="sidebar-link{% if active_key == item.key %} is-active{% endif %}" href="{{ item.href }}" {% if active_key == item.key %}aria-current="page"{% endif %}>
+          {{ icons.icon(item.icon) }}
+          <span>{{ item.label }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+
+    <div class="local-data-panel">
+      <span class="badge badge-info">{{ icons.icon("database") }} <span>Dados locais</span></span>
+      <p>Banco, curriculos revisados e candidaturas ficam neste computador.</p>
+      <small>Versao 0.1.0</small>
+    </div>
+  </aside>
+  <div class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
+{%- endmacro %}
+
+{% macro header() -%}
+  <header class="app-header">
+    <button class="icon-button menu-button" type="button" aria-label="Abrir menu" aria-controls="app-sidebar" aria-expanded="false" data-sidebar-toggle>
+      {{ icons.icon("menu") }}
+    </button>
+
+    <div class="header-context">
+      <span>{{ page_chrome.title }}</span>
+      <small>{{ page_chrome.description }}</small>
+    </div>
+
+    <form class="quick-search" method="get" action="/jobs" role="search">
+      <label class="sr-only" for="quick-search-q">Pesquisar vagas ou empresas</label>
+      {{ icons.icon("search") }}
+      <input id="quick-search-q" name="q" placeholder="Pesquisar vagas ou empresas" value="{{ request.query_params.get('q', '') }}">
+      <button type="submit">Buscar</button>
+    </form>
+
+    {% if page_chrome.primary_action %}
+      <a class="button button-primary header-primary-action" href="{{ page_chrome.primary_action.href }}">
+        {{ icons.icon(page_chrome.primary_action.icon) }}
+        <span>{{ page_chrome.primary_action.label }}</span>
+      </a>
+    {% endif %}
+
+    <button class="icon-button theme-toggle" type="button" aria-label="Alternar tema" data-theme-toggle>
+      {{ icons.icon("moon") }}
+    </button>
+  </header>
+{%- endmacro %}

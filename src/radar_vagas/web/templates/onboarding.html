@@ -1,74 +1,83 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Onboarding - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Primeiro acesso</h1>
-      <p>O Radar roda localmente. Nao ha envio de curriculo, candidatura automatica ou login em plataformas.</p>
-    </div>
+  {{ ui_components.page_header() }}
+
+  <section class="onboarding-steps" aria-label="Etapas iniciais">
+    <div class="onboarding-step is-active">1. Boas-vindas</div>
+    <div class="onboarding-step">2. Curriculo</div>
+    <div class="onboarding-step">3. Revisao</div>
+    <div class="onboarding-step">4. Perfil</div>
+    <div class="onboarding-step">5. Analise</div>
+    <div class="onboarding-step">6. Concluido</div>
   </section>
 
-  <section class="resume-stepper" aria-label="Etapas iniciais">
-    <span class="active">1. Enviar curriculo</span>
-    <span>2. Revisar dados</span>
-    <span>3. Ativar perfil</span>
+  <section class="privacy-note">
+    <strong>Tudo e processado localmente.</strong>
+    <p>Nenhuma candidatura e enviada, nenhum curriculo e enviado para plataformas, PDF escaneado ainda nao possui OCR e toda extracao precisa de revisao humana.</p>
   </section>
 
-  <form class="resume-upload-panel" action="/profile/resume/import" method="post" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label class="resume-dropzone" for="resume_file" tabindex="0">
-      <strong>Comecar pelo curriculo</strong>
-      <span>PDF textual, DOCX, TXT ou Markdown. Nada e aplicado antes da sua revisao.</span>
-      <input id="resume_file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
-    </label>
-    <button type="submit">Extrair para revisao</button>
-  </form>
-
-  <section class="grid">
-    <form class="card" action="/onboarding/profile/upload" method="post" enctype="multipart/form-data">
+  <section class="content-grid two">
+    <form class="resume-upload-panel" action="/profile/resume/import" method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <h2>Importar perfil estruturado</h2>
-      <div class="field">
-        <label for="upload_timezone">Timezone local</label>
-        <input id="upload_timezone" name="timezone" value="{{ ui.timezone }}">
-      </div>
-      <div class="field">
-        <label for="profile_file">Arquivo YAML, JSON ou TXT</label>
-        <input id="profile_file" name="file" type="file" accept=".yaml,.yml,.json,.txt" required>
-      </div>
-      <button type="submit">Importar e ativar</button>
+      <h2>Importar curriculo PDF ou DOCX</h2>
+      <label class="resume-dropzone" for="resume_file" tabindex="0">
+        <strong>Comecar pelo curriculo</strong>
+        <span data-dropzone-label>PDF textual, DOCX, TXT ou Markdown. Nada e aplicado antes da sua revisao.</span>
+        <input id="resume_file" name="file" type="file" accept=".pdf,.docx,.txt,.md" required>
+      </label>
+      <button type="submit">Extrair para revisao</button>
     </form>
 
+    <aside class="section-stack">
+      <form class="card form-card" action="/onboarding/profile/upload" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h2>Importar perfil estruturado</h2>
+        <div class="field">
+          <label for="upload_timezone">Timezone local</label>
+          <input id="upload_timezone" name="timezone" value="{{ ui.timezone }}">
+        </div>
+        <div class="field">
+          <label for="profile_file">Arquivo YAML, JSON ou TXT</label>
+          <input id="profile_file" name="file" type="file" accept=".yaml,.yml,.json,.txt" required>
+        </div>
+        <button type="submit">Importar e ativar</button>
+      </form>
+
+      {% if versions %}
+        <section class="card">
+          <h2>Versoes existentes</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Perfil</th><th>Versao</th><th>Ativo</th><th>Acao</th></tr></thead>
+              <tbody>
+                {% for version in versions %}
+                  <tr>
+                    <td>{{ version.profile.name }}</td>
+                    <td>{{ version.version_number }}</td>
+                    <td>{{ "sim" if version.is_active else "nao" }}</td>
+                    <td>
+                      <form class="inline" action="/profile/{{ version.id }}/activate" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button class="secondary" type="submit">Ativar</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endif %}
+    </aside>
+  </section>
+
+  <section class="content-grid">
     {% set manual_profile_action = "/onboarding/profile/manual" %}
     {% set show_timezone = true %}
     {% set default_profile_name = "Perfil local" %}
     {% set default_skills = "SQL\nPython\nPower BI" %}
     {% include "profile_manual_form.html" %}
   </section>
-
-  {% if versions %}
-    <section class="card">
-      <h2>Versoes existentes</h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Perfil</th><th>Versao</th><th>Ativo</th><th>Acao</th></tr></thead>
-          <tbody>
-            {% for version in versions %}
-              <tr>
-                <td>{{ version.profile.name }}</td>
-                <td>{{ version.version_number }}</td>
-                <td>{{ "sim" if version.is_active else "nao" }}</td>
-                <td>
-                  <form class="inline" action="/profile/{{ version.id }}/activate" method="post">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button class="secondary" type="submit">Ativar</button>
-                  </form>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  {% endif %}
 {% endblock %}

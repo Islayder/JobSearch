@@ -1,13 +1,8 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Revisar curriculo - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Revisar curriculo</h1>
-      <p>{{ import_session.sanitized_filename }} · {{ import_session.source_format|upper }} · {{ import_session.extracted_character_count }} caracteres extraidos</p>
-    </div>
-    <a class="button secondary" href="/profile/resume/imports">Rascunhos</a>
-  </section>
+  {{ ui_components.page_header(title="Revisar curriculo", description=import_session.sanitized_filename ~ " · " ~ (import_session.source_format|upper) ~ " · " ~ import_session.extracted_character_count ~ " caracteres extraidos") }}
 
   <section class="resume-stepper" aria-label="Etapas da importacao">
     <span>1. Enviar arquivo</span>
@@ -15,7 +10,7 @@
     <span>3. Criar perfil</span>
   </section>
 
-  <section class="resume-review-summary">
+  <section class="resume-review-summary" aria-label="Resumo da revisao">
     <div><strong>{{ import_session.candidate_count }}</strong><span>itens</span></div>
     <div><strong>{{ decision_summary.pending }}</strong><span>pendentes</span></div>
     <div><strong>{{ decision_summary.accepted + decision_summary.edited }}</strong><span>confirmados</span></div>
@@ -27,196 +22,218 @@
     <div class="resume-alert warning">Esta importacao esta {{ import_session.status|label }}. Os itens ficam em modo consulta.</div>
   {% endif %}
 
-  <form id="resume-header-form" class="resume-header-form" action="/profile/resume/imports/{{ import_session.import_key }}/header" method="post">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="field">
-      <label for="profile_name">Nome do perfil</label>
-      <input id="profile_name" name="profile_name" value="{{ import_session.profile_name or '' }}" {% if not reviewable %}disabled{% endif %}>
-    </div>
-    <div class="field">
-      <label for="headline">Titulo profissional</label>
-      <input id="headline" name="headline" value="{{ import_session.headline or '' }}" {% if not reviewable %}disabled{% endif %}>
-    </div>
-    <div class="field wide">
-      <label for="summary">Resumo</label>
-      <textarea id="summary" name="summary" rows="4" {% if not reviewable %}disabled{% endif %}>{{ import_session.summary or '' }}</textarea>
-    </div>
-  </form>
+  <section class="resume-review-layout">
+    <nav class="resume-review-nav" aria-label="Secoes da revisao">
+      {% for section_key, section_label in section_order %}
+        <a href="#{{ section_key }}">{{ section_label }}</a>
+      {% endfor %}
+      <a href="#resume-actions">Confirmar perfil</a>
+    </nav>
 
-  {% for section_key, section_label in section_order %}
-    {% if section_key == "warnings" %}
-      <section class="resume-section" id="warnings">
-        <h2>{{ section_label }}</h2>
-        {% if warnings %}
-          {% for warning in warnings %}
-            <div class="resume-alert warning">{{ warning }}</div>
-          {% endfor %}
-        {% else %}
-          <p class="empty">Nenhum aviso de extracao.</p>
-        {% endif %}
-      </section>
-    {% else %}
-      <section class="resume-section" id="{{ section_key }}">
-        <h2>{{ section_label }}</h2>
-        <div class="resume-card-list">
-          {% for row in grouped_candidates[section_key] %}
-            {% set candidate = row.candidate %}
-            {% set payload = row.payload %}
-            <article id="candidate-{{ candidate.id }}" class="resume-candidate status-{{ candidate.decision|status_class }}">
-              <div class="resume-candidate-head">
-                <div>
-                  <span class="badge">{{ row.label }}</span>
-                  <span class="badge confidence-{{ candidate.confidence_label|status_class }}">{{ candidate.confidence_label|label if candidate.confidence_label else "Revisar" }}</span>
-                  <span class="badge status-{{ candidate.decision|status_class }}">{{ candidate.decision|label }}</span>
-                </div>
-                <span class="muted">{{ candidate.source_reference or "origem local" }}</span>
-              </div>
-              <p class="resume-explanation">{{ candidate.explanation }}</p>
-              {% if candidate.source_excerpt %}
-                <blockquote class="resume-excerpt">{{ candidate.source_excerpt }}</blockquote>
-              {% endif %}
-
-              <form class="resume-candidate-form" action="/profile/resume/imports/{{ import_session.import_key }}/candidates/{{ candidate.id }}" method="post">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-                {% if candidate.candidate_type.value == "HEADLINE" %}
-                  <div class="field wide">
-                    <label>Titulo</label>
-                    <input name="headline" value="{{ payload.get('headline', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                {% elif candidate.candidate_type.value == "SUMMARY" %}
-                  <div class="field wide">
-                    <label>Resumo</label>
-                    <textarea name="summary" rows="4" {% if not reviewable %}disabled{% endif %}>{{ payload.get('summary', '') }}</textarea>
-                  </div>
-                {% elif candidate.candidate_type.value == "SKILL" %}
-                  <div class="field">
-                    <label>Habilidade</label>
-                    <input name="name" value="{{ payload.get('name', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Categoria</label>
-                    <input name="category" value="{{ payload.get('category') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Nivel</label>
-                    <input name="level" value="{{ payload.get('level') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  {% set evidence = payload.get('evidence') or [] %}
-                  {% set first_evidence = evidence[0] if evidence else {} %}
-                  <div class="field">
-                    <label>Evidencia</label>
-                    <input name="evidence_title" value="{{ first_evidence.get('title', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field wide">
-                    <label>Descricao da evidencia</label>
-                    <textarea name="evidence_description" rows="3" {% if not reviewable %}disabled{% endif %}>{{ first_evidence.get('description', '') }}</textarea>
-                  </div>
-                  <input type="hidden" name="evidence_source_ref" value="{{ first_evidence.get('source_ref', '') }}">
-                  <input type="hidden" name="evidence_type" value="{{ first_evidence.get('evidence_type', 'RESUME') }}">
-                {% elif candidate.candidate_type.value == "EXPERIENCE" %}
-                  <div class="field">
-                    <label>Cargo</label>
-                    <input name="title" value="{{ payload.get('title', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Organizacao</label>
-                    <input name="organization" value="{{ payload.get('organization') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Inicio</label>
-                    <input name="start_date" value="{{ payload.get('start_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Fim</label>
-                    <input name="end_date" value="{{ payload.get('end_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field wide">
-                    <label>Descricao</label>
-                    <textarea name="description" rows="4" {% if not reviewable %}disabled{% endif %}>{{ payload.get('description') or '' }}</textarea>
-                  </div>
-                  <div class="field wide">
-                    <label>Habilidades citadas</label>
-                    <textarea name="skills" rows="2" {% if not reviewable %}disabled{% endif %}>{{ (payload.get('skills') or [])|join('\n') }}</textarea>
-                  </div>
-                {% elif candidate.candidate_type.value == "PROJECT" %}
-                  <div class="field">
-                    <label>Projeto</label>
-                    <input name="name" value="{{ payload.get('name', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field wide">
-                    <label>Descricao</label>
-                    <textarea name="description" rows="4" {% if not reviewable %}disabled{% endif %}>{{ payload.get('description') or '' }}</textarea>
-                  </div>
-                  <div class="field wide">
-                    <label>Tecnologias</label>
-                    <textarea name="technologies" rows="2" {% if not reviewable %}disabled{% endif %}>{{ (payload.get('technologies') or [])|join('\n') }}</textarea>
-                  </div>
-                  <div class="field">
-                    <label>Referencia</label>
-                    <input name="source_ref" value="{{ payload.get('source_ref') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                {% elif candidate.candidate_type.value == "EDUCATION" %}
-                  <div class="field">
-                    <label>Instituicao</label>
-                    <input name="institution" value="{{ payload.get('institution', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Curso</label>
-                    <input name="course" value="{{ payload.get('course', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Status</label>
-                    <input name="status" value="{{ payload.get('status') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Inicio</label>
-                    <input name="start_date" value="{{ payload.get('start_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Fim</label>
-                    <input name="end_date" value="{{ payload.get('end_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                {% elif candidate.candidate_type.value == "LANGUAGE" %}
-                  <div class="field">
-                    <label>Idioma</label>
-                    <input name="name" value="{{ payload.get('name', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field">
-                    <label>Nivel</label>
-                    <input name="level" value="{{ payload.get('level', '') }}" {% if not reviewable %}disabled{% endif %}>
-                  </div>
-                  <div class="field wide">
-                    <label>Evidencias</label>
-                    <textarea name="evidence" rows="2" {% if not reviewable %}disabled{% endif %}>{{ (payload.get('evidence') or [])|join('\n') }}</textarea>
-                  </div>
-                {% else %}
-                  <div class="field wide">
-                    <label>Trecho</label>
-                    <textarea name="text" rows="3" {% if not reviewable %}disabled{% endif %}>{{ payload.get('text', '') }}</textarea>
-                  </div>
-                {% endif %}
-
-                <div class="resume-candidate-actions">
-                  <button class="secondary" type="submit" name="action" value="save" {% if not reviewable %}disabled{% endif %}>Salvar item</button>
-                  <button type="submit" name="action" value="save_accept" {% if not reviewable %}disabled{% endif %}>Confirmar</button>
-                  {% if candidate.decision.value == "REMOVED" %}
-                    <button class="secondary" type="submit" name="action" value="restore" {% if not reviewable %}disabled{% endif %}>Restaurar</button>
-                  {% else %}
-                    <button class="danger secondary" type="submit" name="action" value="remove" {% if not reviewable %}disabled{% endif %}>Remover</button>
-                  {% endif %}
-                </div>
-              </form>
-            </article>
-          {% else %}
-            <p class="empty">Nenhum item nesta secao.</p>
-          {% endfor %}
+    <div>
+      <form id="resume-header-form" class="resume-header-form" action="/profile/resume/imports/{{ import_session.import_key }}/header" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field">
+          <label for="profile_name">Nome do perfil</label>
+          <input id="profile_name" name="profile_name" value="{{ import_session.profile_name or '' }}" {% if not reviewable %}disabled{% endif %}>
         </div>
-      </section>
-    {% endif %}
-  {% endfor %}
+        <div class="field">
+          <label for="headline">Titulo profissional</label>
+          <input id="headline" name="headline" value="{{ import_session.headline or '' }}" {% if not reviewable %}disabled{% endif %}>
+        </div>
+        <div class="field wide">
+          <label for="summary">Resumo</label>
+          <textarea id="summary" name="summary" rows="4" {% if not reviewable %}disabled{% endif %}>{{ import_session.summary or '' }}</textarea>
+        </div>
+      </form>
 
-  <section class="resume-sticky-actions">
+      {% for section_key, section_label in section_order %}
+        {% if section_key == "warnings" %}
+          <section class="resume-section" id="warnings">
+            <div class="section-heading">
+              <div>
+                <h2>{{ section_label }}</h2>
+                <p>Mensagens geradas durante a extracao local.</p>
+              </div>
+            </div>
+            {% if warnings %}
+              {% for warning in warnings %}
+                <div class="resume-alert warning">{{ warning }}</div>
+              {% endfor %}
+            {% else %}
+              {{ ui_components.empty_state("Nenhum aviso de extracao.", "O arquivo nao gerou alertas adicionais.", icon="check") }}
+            {% endif %}
+          </section>
+        {% else %}
+          <section class="resume-section" id="{{ section_key }}">
+            <div class="section-heading">
+              <div>
+                <h2>{{ section_label }}</h2>
+                <p>Revise, edite, confirme ou remova cada item desta secao.</p>
+              </div>
+              <span class="badge badge-info">{{ grouped_candidates[section_key]|length }} itens</span>
+            </div>
+            <div class="resume-card-list">
+              {% for row in grouped_candidates[section_key] %}
+                {% set candidate = row.candidate %}
+                {% set payload = row.payload %}
+                <article id="candidate-{{ candidate.id }}" class="resume-candidate status-{{ candidate.decision|status_class }}">
+                  <div class="resume-candidate-head">
+                    <div class="badge-row">
+                      <span class="badge">{{ row.label }}</span>
+                      <span class="badge confidence-{{ candidate.confidence_label|status_class }}">{{ candidate.confidence_label|label if candidate.confidence_label else "Revisar" }}</span>
+                      <span class="badge status-{{ candidate.decision|status_class }}">{{ candidate.decision|label }}</span>
+                    </div>
+                    <span class="muted">{{ candidate.source_reference or "origem local" }}</span>
+                  </div>
+                  <p class="resume-explanation">{{ candidate.explanation }}</p>
+                  {% if candidate.source_excerpt %}
+                    <blockquote class="resume-excerpt">{{ candidate.source_excerpt }}</blockquote>
+                  {% endif %}
+
+                  <form class="resume-candidate-form" action="/profile/resume/imports/{{ import_session.import_key }}/candidates/{{ candidate.id }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                    {% if candidate.candidate_type.value == "HEADLINE" %}
+                      <div class="field wide">
+                        <label>Titulo</label>
+                        <input name="headline" value="{{ payload.get('headline', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                    {% elif candidate.candidate_type.value == "SUMMARY" %}
+                      <div class="field wide">
+                        <label>Resumo</label>
+                        <textarea name="summary" rows="4" {% if not reviewable %}disabled{% endif %}>{{ payload.get('summary', '') }}</textarea>
+                      </div>
+                    {% elif candidate.candidate_type.value == "SKILL" %}
+                      <div class="field">
+                        <label>Habilidade</label>
+                        <input name="name" value="{{ payload.get('name', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Categoria</label>
+                        <input name="category" value="{{ payload.get('category') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Nivel</label>
+                        <input name="level" value="{{ payload.get('level') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      {% set evidence = payload.get('evidence') or [] %}
+                      {% set first_evidence = evidence[0] if evidence else {} %}
+                      <div class="field">
+                        <label>Evidencia</label>
+                        <input name="evidence_title" value="{{ first_evidence.get('title', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field wide">
+                        <label>Descricao da evidencia</label>
+                        <textarea name="evidence_description" rows="3" {% if not reviewable %}disabled{% endif %}>{{ first_evidence.get('description', '') }}</textarea>
+                      </div>
+                      <input type="hidden" name="evidence_source_ref" value="{{ first_evidence.get('source_ref', '') }}">
+                      <input type="hidden" name="evidence_type" value="{{ first_evidence.get('evidence_type', 'RESUME') }}">
+                    {% elif candidate.candidate_type.value == "EXPERIENCE" %}
+                      <div class="field">
+                        <label>Cargo</label>
+                        <input name="title" value="{{ payload.get('title', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Organizacao</label>
+                        <input name="organization" value="{{ payload.get('organization') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Inicio</label>
+                        <input name="start_date" value="{{ payload.get('start_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Fim</label>
+                        <input name="end_date" value="{{ payload.get('end_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field wide">
+                        <label>Descricao</label>
+                        <textarea name="description" rows="4" {% if not reviewable %}disabled{% endif %}>{{ payload.get('description') or '' }}</textarea>
+                      </div>
+                      <div class="field wide">
+                        <label>Habilidades citadas</label>
+                        <textarea name="skills" rows="2" {% if not reviewable %}disabled{% endif %}>{{ (payload.get('skills') or [])|join('\n') }}</textarea>
+                      </div>
+                    {% elif candidate.candidate_type.value == "PROJECT" %}
+                      <div class="field">
+                        <label>Projeto</label>
+                        <input name="name" value="{{ payload.get('name', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field wide">
+                        <label>Descricao</label>
+                        <textarea name="description" rows="4" {% if not reviewable %}disabled{% endif %}>{{ payload.get('description') or '' }}</textarea>
+                      </div>
+                      <div class="field wide">
+                        <label>Tecnologias</label>
+                        <textarea name="technologies" rows="2" {% if not reviewable %}disabled{% endif %}>{{ (payload.get('technologies') or [])|join('\n') }}</textarea>
+                      </div>
+                      <div class="field">
+                        <label>Referencia</label>
+                        <input name="source_ref" value="{{ payload.get('source_ref') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                    {% elif candidate.candidate_type.value == "EDUCATION" %}
+                      <div class="field">
+                        <label>Instituicao</label>
+                        <input name="institution" value="{{ payload.get('institution', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Curso</label>
+                        <input name="course" value="{{ payload.get('course', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Status</label>
+                        <input name="status" value="{{ payload.get('status') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Inicio</label>
+                        <input name="start_date" value="{{ payload.get('start_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Fim</label>
+                        <input name="end_date" value="{{ payload.get('end_date') or '' }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                    {% elif candidate.candidate_type.value == "LANGUAGE" %}
+                      <div class="field">
+                        <label>Idioma</label>
+                        <input name="name" value="{{ payload.get('name', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field">
+                        <label>Nivel</label>
+                        <input name="level" value="{{ payload.get('level', '') }}" {% if not reviewable %}disabled{% endif %}>
+                      </div>
+                      <div class="field wide">
+                        <label>Evidencias</label>
+                        <textarea name="evidence" rows="2" {% if not reviewable %}disabled{% endif %}>{{ (payload.get('evidence') or [])|join('\n') }}</textarea>
+                      </div>
+                    {% else %}
+                      <div class="field wide">
+                        <label>Trecho</label>
+                        <textarea name="text" rows="3" {% if not reviewable %}disabled{% endif %}>{{ payload.get('text', '') }}</textarea>
+                      </div>
+                    {% endif %}
+
+                    <div class="resume-candidate-actions">
+                      <button class="secondary" type="submit" name="action" value="save" {% if not reviewable %}disabled{% endif %}>Salvar item</button>
+                      <button type="submit" name="action" value="save_accept" {% if not reviewable %}disabled{% endif %}>Confirmar</button>
+                      {% if candidate.decision.value == "REMOVED" %}
+                        <button class="secondary" type="submit" name="action" value="restore" {% if not reviewable %}disabled{% endif %}>Restaurar</button>
+                      {% else %}
+                        <button class="danger secondary" type="submit" name="action" value="remove" {% if not reviewable %}disabled{% endif %}>Remover</button>
+                      {% endif %}
+                    </div>
+                  </form>
+                </article>
+              {% else %}
+                {{ ui_components.empty_state("Nenhum item nesta secao.", "O parser nao encontrou candidatos desse tipo.", icon="info") }}
+              {% endfor %}
+            </div>
+          </section>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="resume-sticky-actions" id="resume-actions">
     <div>
       <strong>{{ decision_summary.accepted + decision_summary.edited }}</strong>
       <span>itens confirmados para criar o perfil</span>

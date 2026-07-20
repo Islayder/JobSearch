@@ -1,164 +1,212 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Vagas - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Vagas</h1>
-      <p>{{ page.total }} registros encontrados.</p>
-    </div>
-  </section>
+  {{ ui_components.page_header(description=page.total ~ " registros encontrados com os filtros atuais.") }}
 
   <nav class="tabs" aria-label="Atalhos de vagas">
     <a class="{% if not filters.tab %}active{% endif %}" href="/jobs">Todas ativas</a>
     {% for key, text in tabs.items() %}
-      <a class="{% if filters.tab == key %}active{% endif %}" href="/jobs?tab={{ key }}">{{ text }}</a>
+      <a class="{% if filters.tab == key %}active{% endif %}" href="/jobs?tab={{ key }}" {% if filters.tab == key %}aria-current="page"{% endif %}>{{ text }}</a>
     {% endfor %}
   </nav>
 
-  <form class="toolbar filters" method="get" action="/jobs">
+  <form class="filters" method="get" action="/jobs" id="job-filters">
     <input type="hidden" name="tab" value="{{ filters.tab }}">
-    <div class="field">
-      <label for="q">Busca</label>
-      <input id="q" name="q" value="{{ filters.q }}" placeholder="titulo, texto ou empresa">
+    <div class="section-heading">
+      <div>
+        <h2>Filtros</h2>
+        <p>Refine por oportunidade, local, origem e avaliacao.</p>
+      </div>
+      <div class="filter-actions">
+        <button class="button button-primary" type="submit">Aplicar filtros</button>
+        <a class="button button-secondary" href="/jobs">Limpar filtros</a>
+      </div>
     </div>
-    <div class="field">
-      <label for="company">Empresa</label>
-      <input id="company" name="company" value="{{ filters.company }}">
+    <div class="filter-grid">
+      <div class="field">
+        <label for="q">Busca</label>
+        <input id="q" name="q" value="{{ filters.q }}" placeholder="titulo, texto ou empresa">
+      </div>
+      <div class="field">
+        <label for="sort">Ordenacao</label>
+        <select id="sort" name="sort">
+          <option value="recommendation" {% if sort in ["recommendation", "score"] %}selected{% endif %}>Recomendacao</option>
+          <option value="compatibility" {% if sort == "compatibility" %}selected{% endif %}>Compatibilidade</option>
+          <option value="publication" {% if sort in ["publication", "newest"] %}selected{% endif %}>Publicacao</option>
+          <option value="first-seen" {% if sort == "first-seen" %}selected{% endif %}>Primeiro achado</option>
+          <option value="company" {% if sort == "company" %}selected{% endif %}>Empresa</option>
+          <option value="title" {% if sort == "title" %}selected{% endif %}>Titulo</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="status">Estado</label>
+        <select id="status" name="status">
+          <option value="">Todos</option>
+          {% for value, text in job_statuses.items() %}
+            <option value="{{ value.value }}" {% if filters.status == value.value %}selected{% endif %}>{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="review">Revisao</label>
+        <select id="review" name="review">
+          <option value="">Todas</option>
+          {% for value, text in review_states.items() %}
+            <option value="{{ value.value }}" {% if filters.review == value.value %}selected{% endif %}>{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
-    <div class="field">
-      <label for="city">Cidade</label>
-      <input id="city" name="city" value="{{ filters.city }}">
-    </div>
-    <div class="field compact">
-      <label for="state">UF</label>
-      <input id="state" name="state" value="{{ filters.state }}">
-    </div>
-    <div class="field">
-      <label for="status">Estado</label>
-      <select id="status" name="status">
-        <option value="">Todos</option>
-        {% for value, text in job_statuses.items() %}
-          <option value="{{ value.value }}" {% if filters.status == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="review">Revisao</label>
-      <select id="review" name="review">
-        <option value="">Todas</option>
-        {% for value, text in review_states.items() %}
-          <option value="{{ value.value }}" {% if filters.review == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="employment_type">Tipo</label>
-      <select id="employment_type" name="employment_type">
-        <option value="">Todos</option>
-        {% for value, text in labels.employment_types.items() %}
-          <option value="{{ value.value }}" {% if filters.employment_type == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="work_model">Modelo</label>
-      <select id="work_model" name="work_model">
-        <option value="">Todos</option>
-        {% for value, text in labels.work_models.items() %}
-          <option value="{{ value.value }}" {% if filters.work_model == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="provider">Plataforma</label>
-      <input id="provider" name="provider" value="{{ filters.provider }}" placeholder="gupy">
-    </div>
-    <div class="field">
-      <label for="eligibility">Elegibilidade</label>
-      <select id="eligibility" name="eligibility">
-        <option value="">Todas</option>
-        {% for value, text in eligibility_statuses.items() %}
-          <option value="{{ value.value }}" {% if filters.eligibility == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="relevance">Relevancia</label>
-      <select id="relevance" name="relevance">
-        <option value="">Todas</option>
-        {% for value, text in relevance_statuses.items() %}
-          <option value="{{ value.value }}" {% if filters.relevance == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field compact">
-      <label for="min_ranking">Ranking min.</label>
-      <input id="min_ranking" name="min_ranking" type="number" min="0" max="100" value="{{ filters.min_ranking }}">
-    </div>
-    <div class="field compact">
-      <label for="min_compatibility">Compat. min.</label>
-      <input id="min_compatibility" name="min_compatibility" type="number" min="0" max="100" value="{{ filters.min_compatibility }}">
-    </div>
-    <div class="field">
-      <label for="sort">Ordenacao</label>
-      <select id="sort" name="sort">
-        <option value="recommendation" {% if sort in ["recommendation", "score"] %}selected{% endif %}>Recomendacao</option>
-        <option value="compatibility" {% if sort == "compatibility" %}selected{% endif %}>Compatibilidade</option>
-        <option value="publication" {% if sort in ["publication", "newest"] %}selected{% endif %}>Publicacao</option>
-        <option value="first-seen" {% if sort == "first-seen" %}selected{% endif %}>Primeiro achado</option>
-        <option value="company" {% if sort == "company" %}selected{% endif %}>Empresa</option>
-        <option value="title" {% if sort == "title" %}selected{% endif %}>Titulo</option>
-      </select>
-    </div>
-    <label class="check">
-      <input name="only_with_compatibility" type="checkbox" {% if filters.only_with_compatibility %}checked{% endif %}>
-      Com compatibilidade
-    </label>
-    <label class="check">
-      <input name="only_without_compatibility" type="checkbox" {% if filters.only_without_compatibility %}checked{% endif %}>
-      Sem compatibilidade
-    </label>
-    <button type="submit">Filtrar</button>
+
+    <details>
+      <summary>Filtros avancados</summary>
+      <div class="filter-grid">
+        <div class="field">
+          <label for="employment_type">Tipo</label>
+          <select id="employment_type" name="employment_type">
+            <option value="">Todos</option>
+            {% for value, text in labels.employment_types.items() %}
+              <option value="{{ value.value }}" {% if filters.employment_type == value.value %}selected{% endif %}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="work_model">Modelo</label>
+          <select id="work_model" name="work_model">
+            <option value="">Todos</option>
+            {% for value, text in labels.work_models.items() %}
+              <option value="{{ value.value }}" {% if filters.work_model == value.value %}selected{% endif %}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="city">Cidade</label>
+          <input id="city" name="city" value="{{ filters.city }}">
+        </div>
+        <div class="field compact">
+          <label for="state">UF</label>
+          <input id="state" name="state" value="{{ filters.state }}">
+        </div>
+        <div class="field">
+          <label for="provider">Plataforma</label>
+          <input id="provider" name="provider" value="{{ filters.provider }}" placeholder="gupy">
+        </div>
+        <div class="field">
+          <label for="company">Empresa</label>
+          <input id="company" name="company" value="{{ filters.company }}">
+        </div>
+        <div class="field">
+          <label for="eligibility">Elegibilidade</label>
+          <select id="eligibility" name="eligibility">
+            <option value="">Todas</option>
+            {% for value, text in eligibility_statuses.items() %}
+              <option value="{{ value.value }}" {% if filters.eligibility == value.value %}selected{% endif %}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="relevance">Relevancia</label>
+          <select id="relevance" name="relevance">
+            <option value="">Todas</option>
+            {% for value, text in relevance_statuses.items() %}
+              <option value="{{ value.value }}" {% if filters.relevance == value.value %}selected{% endif %}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field compact">
+          <label for="min_ranking">Ranking minimo</label>
+          <input id="min_ranking" name="min_ranking" type="number" min="0" max="100" value="{{ filters.min_ranking }}">
+        </div>
+        <div class="field compact">
+          <label for="min_compatibility">Compatibilidade minima</label>
+          <input id="min_compatibility" name="min_compatibility" type="number" min="0" max="100" value="{{ filters.min_compatibility }}">
+        </div>
+        <label class="check">
+          <input name="only_with_compatibility" type="checkbox" {% if filters.only_with_compatibility %}checked{% endif %}>
+          Com compatibilidade atual
+        </label>
+        <label class="check">
+          <input name="only_without_compatibility" type="checkbox" {% if filters.only_without_compatibility %}checked{% endif %}>
+          Sem compatibilidade atual
+        </label>
+      </div>
+    </details>
   </form>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Vaga</th>
-          <th>Empresa</th>
-          <th>Estado</th>
-          <th>Modelo</th>
-          <th>Ranking</th>
-          <th>Compat.</th>
-          <th>Resumo</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for job in page.items %}
-          <tr>
-            <td><a href="/jobs/{{ job.id }}">{{ job.canonical_title }}</a></td>
-            <td>{{ job.company.canonical_name }}</td>
-            <td><span class="badge {{ job.status|status_class }}">{{ job.status|label }}</span></td>
-            <td>{{ job.work_model|label }}</td>
-            <td>{{ job.decision.ranking_score if job.decision and job.decision.ranking_score is not none else "-" }}</td>
-            <td>{{ job.current_comparison.overall_score if job.current_comparison else "-" }}</td>
-            <td>{{ job.description|preview(140) }}</td>
-          </tr>
-        {% else %}
-          <tr><td colspan="7" class="empty">Nenhuma vaga encontrada.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="active-filters" aria-label="Filtros ativos">
+    {% for key, value in filters.items() %}
+      {% if value and key not in ["tab"] %}
+        {{ ui_components.filter_chip(key ~ ": " ~ value, href="/jobs") }}
+      {% endif %}
+    {% endfor %}
   </div>
 
-  <nav class="toolbar" aria-label="Paginacao">
-    {% if page.has_previous %}
-      <a class="button secondary" href="{{ request.url.include_query_params(page=page.page - 1) }}">Anterior</a>
-    {% endif %}
-    <span class="muted">Pagina {{ page.page }} de {{ page.pages }}</span>
-    {% if page.has_next %}
-      <a class="button secondary" href="{{ request.url.include_query_params(page=page.page + 1) }}">Proxima</a>
-    {% endif %}
-  </nav>
+  <section class="job-list" aria-label="Resultados de vagas">
+    {% for job in page.items %}
+      {% set actions = job.valid_actions %}
+      <article class="job-card">
+        <div>
+          <h2><a href="/jobs/{{ job.id }}">{{ job.canonical_title }}</a></h2>
+          <div class="job-meta">
+            <span>{{ job.company.canonical_name }}</span>
+            <span>{{ job.city or "Local nao informado" }}{% if job.state %}/{{ job.state }}{% endif %}</span>
+            <span>{{ job.work_model|label }}</span>
+            <span>{{ job.employment_type|label }}</span>
+          </div>
+          <div class="badge-row">
+            <span class="badge {{ job.status|status_class }}">{{ job.status|label }}</span>
+            <span class="badge {{ job.effective_review_state|status_class }}">{{ job.effective_review_state|label }}</span>
+            {% if job.decision %}
+              <span class="badge {{ job.decision.eligibility_status|status_class }}">{{ job.decision.eligibility_status|label }}</span>
+              <span class="badge {{ job.decision.relevance_status|status_class }}">{{ job.decision.relevance_status|label }}</span>
+            {% endif %}
+            {% if job.current_comparison %}
+              <span class="badge badge-info">Compatibilidade atual</span>
+            {% else %}
+              <span class="badge badge-warning">Sem compatibilidade atual</span>
+            {% endif %}
+          </div>
+          <div class="score-strip" aria-label="Avaliacao da vaga">
+            <div class="score-pill"><strong>{{ job.decision.ranking_score if job.decision and job.decision.ranking_score is not none else "-" }}</strong><span>ranking</span></div>
+            <div class="score-pill"><strong>{{ job.current_comparison.overall_score if job.current_comparison else "-" }}</strong><span>compatibilidade</span></div>
+            <div class="score-pill"><strong>{{ job.postings|length }}</strong><span>descobertas</span></div>
+          </div>
+          <p class="job-summary">{{ job.description|preview(150) }}</p>
+        </div>
+        <div class="actions">
+          <a class="button button-secondary" href="/jobs/{{ job.id }}">Ver detalhes</a>
+          {% if actions.shortlist %}
+            <form class="inline" action="/jobs/{{ job.id }}/shortlist" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">Favoritar</button>
+            </form>
+          {% endif %}
+          {% if actions.unshortlist %}
+            <form class="inline" action="/jobs/{{ job.id }}/unshortlist" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">Remover favorito</button>
+            </form>
+          {% endif %}
+          {% if actions.dismiss %}
+            <form class="inline" action="/jobs/{{ job.id }}/dismiss" method="post" data-confirm="Descartar esta vaga?">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="reason_code" value="other">
+              <button class="danger secondary" type="submit">Descartar</button>
+            </form>
+          {% endif %}
+          {% if actions.restore %}
+            <form class="inline" action="/jobs/{{ job.id }}/restore" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">Restaurar</button>
+            </form>
+          {% endif %}
+        </div>
+      </article>
+    {% else %}
+      {{ ui_components.empty_state("Nenhuma vaga encontrada.", "Ajuste os filtros ou execute uma coleta para preencher a lista.", "Limpar filtros", "/jobs", icon="briefcase") }}
+    {% endfor %}
+  </section>
+
+  {{ ui_components.pagination(page) }}
 {% endblock %}

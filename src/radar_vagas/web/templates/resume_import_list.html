@@ -1,13 +1,8 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Rascunhos de curriculo - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Rascunhos de curriculo</h1>
-      <p>Importacoes locais aguardando revisao, confirmadas ou descartadas.</p>
-    </div>
-    <a class="button" href="/profile/resume/import">Novo importador</a>
-  </section>
+  {{ ui_components.page_header() }}
 
   <section class="card">
     <div class="table-wrap">
@@ -23,7 +18,7 @@
               <td>{{ item.created_at|datetime(ui.timezone) }}</td>
               <td>{{ item.updated_at|datetime(ui.timezone) }}</td>
               <td class="actions-cell">
-                <a class="button secondary" href="/profile/resume/imports/{{ item.import_key }}/review">Abrir</a>
+                <a class="button button-secondary" href="/profile/resume/imports/{{ item.import_key }}/review">Abrir</a>
                 {% if item.status.value != "CONFIRMED" %}
                   <form class="inline" action="/profile/resume/imports/{{ item.import_key }}/purge" method="post" data-confirm="Remover este rascunho local?">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -33,7 +28,7 @@
               </td>
             </tr>
           {% else %}
-            <tr><td colspan="7" class="empty">Nenhuma importacao encontrada.</td></tr>
+            <tr><td colspan="7">{{ ui_components.empty_state("Nenhuma importacao encontrada.", "Rascunhos criados pelo importador aparecem nesta lista.", "Novo importador", "/profile/resume/import", icon="upload") }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

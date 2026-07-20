@@ -1,118 +1,165 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Radar de Vagas{% endblock %}
+{% import "components/ui.html" as ui_components with context %}
+{% block title %}Visao geral - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Dashboard</h1>
-      <p>Fila local de revisao, compromissos e candidaturas.</p>
-    </div>
-    <div class="actions">
-      <a class="button" href="/jobs?tab=aguardando-revisao">Revisar hoje</a>
-      <a class="button secondary" href="/agenda">Abrir agenda</a>
-    </div>
+  {{ ui_components.page_header() }}
+
+  <section class="dashboard-hero" aria-label="Resumo do dia">
+    <span class="badge badge-info">Dados locais</span>
+    <h2>{{ dashboard.greeting }}</h2>
+    <p>{{ dashboard.daily_summary }}</p>
   </section>
 
-  <section class="metrics" aria-label="Resumo">
-    <div class="metric"><strong>{{ dashboard.metrics.new_jobs }}</strong><span>novas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.unreviewed }}</strong><span>nao revisadas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.recommended }}</strong><span>recomendadas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.shortlisted }}</strong><span>favoritas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.active_applications }}</strong><span>candidaturas ativas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.awaiting_update }}</strong><span>aguardando retorno</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.tests_cases }}</strong><span>testes e cases</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.interviews }}</strong><span>entrevistas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.offers }}</strong><span>ofertas</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.upcoming_commitments }}</strong><span>proximos compromissos</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.sources_with_problem }}</strong><span>fontes em atencao</span></div>
-    <div class="metric"><strong>{{ dashboard.metrics.page_size }}</strong><span>itens por pagina</span></div>
+  <section class="metrics" aria-label="Metricas principais">
+    {{ ui_components.metric(dashboard.metrics.unreviewed, "Para revisar", "Vagas ativas sem decisao humana.", href="/jobs?tab=aguardando-revisao", icon="check") }}
+    {{ ui_components.metric(dashboard.metrics.recommended, "Recomendadas", "Prioridade alta pelas regras atuais.", href="/jobs?tab=recomendadas", icon="star") }}
+    {{ ui_components.metric(dashboard.metrics.shortlisted, "Favoritas", "Separadas para acompanhar.", href="/jobs?tab=favoritas", icon="star") }}
+    {{ ui_components.metric(dashboard.metrics.active_applications, "Candidaturas ativas", "Processos registrados manualmente.", href="/applications", icon="send") }}
+    {{ ui_components.metric(dashboard.metrics.interviews, "Entrevistas", "Etapas de entrevista em aberto.", href="/applications?shortcut=interview", icon="calendar") }}
+    {{ ui_components.metric(dashboard.metrics.upcoming_commitments, "Compromissos proximos", "Agenda dos proximos 30 dias.", href="/agenda", icon="calendar") }}
   </section>
+  <span class="sr-only"><strong>{{ dashboard.metrics.unreviewed }}</strong><span>nao revisadas</span></span>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Revisar hoje</h2>
-      <div class="list">
-        {% for job in dashboard.review_today %}
-          <div class="row">
-            <a href="/jobs/{{ job.id }}"><strong>{{ job.canonical_title }}</strong></a>
-            <div class="muted">{{ job.company.canonical_name }} · {{ job.status|label }}</div>
-            <div>{{ job.description|preview(120) }}</div>
+  <section class="content-grid two">
+    <div class="section-stack">
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>O que precisa da sua atencao</h2>
+            <p>Vagas ativas que ainda nao receberam revisao manual.</p>
           </div>
-        {% else %}
-          <p class="empty">Nenhuma vaga ativa para revisao.</p>
-        {% endfor %}
-      </div>
-    </div>
-    <div class="card">
-      <h2>Proximos compromissos</h2>
-      <div class="list">
-        {% for event in dashboard.upcoming_events %}
-          <div class="row">
-            <a href="/agenda/events/{{ event.id }}/edit"><strong>{{ event.title }}</strong></a>
-            <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
-            {% if event.job %}<a href="/jobs/{{ event.job.id }}">{{ event.job.company.canonical_name }}</a>{% endif %}
-          </div>
-        {% else %}
-          <p class="empty">Nenhum compromisso nos proximos 30 dias.</p>
-        {% endfor %}
-      </div>
-    </div>
-  </section>
+          <a href="/jobs?tab=aguardando-revisao">Ver fila</a>
+        </div>
+        <div class="list">
+          {% for job in dashboard.review_today %}
+            <article class="row">
+              <a href="/jobs/{{ job.id }}"><strong>{{ job.canonical_title }}</strong></a>
+              <div class="muted">{{ job.company.canonical_name }} · {{ job.work_model|label }} · {{ job.status|label }}</div>
+              <p>{{ job.description|preview(120) }}</p>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nada pendente agora.", "Quando houver vagas sem revisao, elas aparecem aqui.", "Abrir vagas", "/jobs") }}
+          {% endfor %}
+        </div>
+      </section>
 
-  <section class="grid three">
-    <div class="card">
-      <h2>Aguardando retorno</h2>
-      {% for application in dashboard.awaiting_update %}
-        <div class="row"><a href="/applications/{{ application.id }}">{{ application.job.company.canonical_name }}</a></div>
-      {% else %}
-        <p class="empty">Nada aguardando retorno.</p>
-      {% endfor %}
-    </div>
-    <div class="card">
-      <h2>Testes e cases</h2>
-      {% for application in dashboard.tests_cases %}
-        <div class="row"><a href="/applications/{{ application.id }}">{{ application.job.company.canonical_name }} · {{ application.stage|label }}</a></div>
-      {% else %}
-        <p class="empty">Nenhum teste ou case ativo.</p>
-      {% endfor %}
-    </div>
-    <div class="card">
-      <h2>Entrevistas</h2>
-      {% for application in dashboard.interviews %}
-        <div class="row"><a href="/applications/{{ application.id }}">{{ application.job.company.canonical_name }} · {{ application.stage|label }}</a></div>
-      {% else %}
-        <p class="empty">Nenhuma entrevista registrada.</p>
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="grid">
-    <div class="card">
-      <h2>Saude das fontes</h2>
-      <div class="list">
-        {% for row in dashboard.source_health.rows %}
-          <div class="row">
-            <span class="badge {{ row.state }}">{{ row.state }}</span>
-            <strong>{{ row.kind }} · {{ row.label }}</strong>
-            <div class="muted">{{ row.message }}</div>
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Vagas mais compatíveis ou recomendadas</h2>
+            <p>Itens recentes dentro da fila ativa.</p>
           </div>
+          <a href="/jobs?tab=recomendadas">Ver recomendadas</a>
+        </div>
+        <div class="list">
+          {% for job in dashboard.latest_jobs %}
+            <article class="row">
+              <a href="/jobs/{{ job.id }}"><strong>{{ job.canonical_title }}</strong></a>
+              <div class="muted">{{ job.company.canonical_name }} · ranking {{ job.decision.ranking_score if job.decision and job.decision.ranking_score is not none else "-" }}</div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhuma vaga ativa encontrada.", "Execute uma coleta ou importe vagas para alimentar o Radar.", "Abrir fontes", "/sources", icon="database") }}
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Candidaturas aguardando atualizacao</h2>
+            <p>Processos marcados como aguardando retorno.</p>
+          </div>
+          <a href="/applications?shortcut=waiting-update">Ver candidaturas</a>
+        </div>
+        <div class="list">
+          {% for application in dashboard.awaiting_update %}
+            <article class="row">
+              <a href="/applications/{{ application.id }}"><strong>{{ application.job.company.canonical_name }}</strong></a>
+              <div class="muted">{{ application.job.canonical_title }} · {{ application.stage|label }}</div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum retorno pendente.", "Atualizacoes de candidatura aparecem aqui depois de registradas.") }}
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+
+    <aside class="section-stack">
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Proximos compromissos</h2>
+            <p>Agenda dos proximos 30 dias.</p>
+          </div>
+          <a href="/agenda">Agenda</a>
+        </div>
+        <div class="list">
+          {% for event in dashboard.upcoming_events %}
+            <article class="row">
+              <a href="/agenda/events/{{ event.id }}/edit"><strong>{{ event.title }}</strong></a>
+              <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
+              {% if event.job %}<a href="/jobs/{{ event.job.id }}">{{ event.job.company.canonical_name }}</a>{% endif %}
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Agenda livre.", "Compromissos criados em vagas ou candidaturas aparecem aqui.", "Criar compromisso", "/agenda#new-event", icon="calendar") }}
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Testes e cases</h2>
+            <p>Etapas operacionais que exigem entrega.</p>
+          </div>
+          <a href="/applications?shortcut=test-case">Ver testes</a>
+        </div>
+        <div class="list">
+          {% for application in dashboard.tests_cases %}
+            <article class="row">
+              <a href="/applications/{{ application.id }}">{{ application.job.company.canonical_name }} · {{ application.stage|label }}</a>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum teste ou case ativo.", "Quando voce registrar esse tipo de etapa, ela aparece aqui.") }}
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>Saude das fontes</h2>
+            <p>{{ dashboard.metrics.sources_with_problem }} itens precisam de atencao.</p>
+          </div>
+          <a href="/sources">Abrir fontes</a>
+        </div>
+        <div class="list">
+          {% for row in dashboard.source_health.rows %}
+            <article class="row">
+              <span class="badge {{ row.state }}">{{ row.state }}</span>
+              <strong>{{ row.kind }} · {{ row.label }}</strong>
+              <div class="muted">{{ row.message }}</div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhuma fonte registrada.", "Configure ou importe fontes para acompanhar a saude da coleta.", "Ver fontes", "/sources", icon="database") }}
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Acoes rapidas</h2>
+        <div class="actions">
+          <a class="button button-secondary" href="/jobs?tab=recomendadas">Recomendadas</a>
+          <a class="button button-secondary" href="/applications?shortcut=waiting-update">Aguardando retorno</a>
+          <a class="button button-secondary" href="/profile">Perfil ativo</a>
+          <a class="button button-secondary" href="/sources">Fontes</a>
+        </div>
+        {% if dashboard.active_profile %}
+          <p class="muted">{{ dashboard.active_profile.profile.name }} · versao {{ dashboard.active_profile.version_number }}</p>
         {% else %}
-          <p class="empty">Nenhuma fonte registrada.</p>
-        {% endfor %}
-      </div>
-    </div>
-    <div class="card">
-      <h2>Acoes rapidas</h2>
-      <div class="actions">
-        <a class="button secondary" href="/jobs?tab=recomendadas">Recomendadas</a>
-        <a class="button secondary" href="/applications?shortcut=waiting-update">Aguardando retorno</a>
-        <a class="button secondary" href="/profile">Perfil ativo</a>
-        <a class="button secondary" href="/sources">Fontes</a>
-      </div>
-      {% if dashboard.active_profile %}
-        <p class="muted">{{ dashboard.active_profile.profile.name }} · versao {{ dashboard.active_profile.version_number }}</p>
-      {% else %}
-        <p class="empty">Nenhum perfil ativo.</p>
-      {% endif %}
-    </div>
+          {{ ui_components.empty_state("Nenhum perfil ativo.", "Crie ou importe um perfil antes de analisar compatibilidade.", "Importar curriculo", "/profile/resume/import", icon="user") }}
+        {% endif %}
+      </section>
+    </aside>
   </section>
 {% endblock %}

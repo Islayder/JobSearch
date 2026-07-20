@@ -1,0 +1,259 @@
+.resume-stepper {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+  padding: 8px;
+}
+
+.resume-stepper span {
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-weight: 850;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.resume-stepper .active {
+  background: var(--color-primary-50);
+  color: var(--color-primary-800);
+}
+
+.resume-upload-panel,
+.resume-header-form,
+.resume-section,
+.resume-review-summary,
+.resume-sticky-actions {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+
+.resume-upload-panel,
+.resume-section {
+  margin-bottom: 16px;
+  padding: 18px;
+}
+
+.resume-dropzone {
+  align-items: center;
+  background: var(--color-primary-50);
+  border: 2px dashed var(--color-primary-500);
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  min-height: 210px;
+  padding: 28px;
+  text-align: center;
+}
+
+.resume-dropzone strong {
+  color: var(--color-primary-900);
+  font-size: 22px;
+}
+
+.resume-dropzone span {
+  color: var(--color-text-muted);
+  max-width: 680px;
+}
+
+.resume-dropzone input {
+  max-width: 100%;
+}
+
+.resume-upload-panel.is-loading {
+  opacity: 0.78;
+}
+
+.resume-upload-actions,
+.resume-candidate-actions,
+.resume-sticky-buttons {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.resume-alert {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.resume-alert.warning {
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.resume-alert.danger {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.resume-review-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.resume-review-nav {
+  align-self: start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  position: sticky;
+  top: calc(var(--header-height) + 18px);
+}
+
+.resume-review-nav a {
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
+.resume-review-nav a:hover {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.resume-review-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.resume-review-summary div {
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.resume-review-summary strong {
+  color: var(--color-primary-800);
+  display: block;
+  font-size: 24px;
+}
+
+.resume-review-summary span {
+  color: var(--color-text-muted);
+}
+
+.resume-header-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 16px;
+  padding: 18px;
+}
+
+.resume-header-form .wide {
+  grid-column: 1 / -1;
+}
+
+.resume-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.resume-candidate {
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary-500);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+
+.resume-candidate.status-removed {
+  border-left-color: var(--color-danger);
+  opacity: 0.78;
+}
+
+.resume-candidate.status-accepted,
+.resume-candidate.status-edited {
+  border-left-color: var(--color-success);
+}
+
+.resume-candidate-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.resume-explanation {
+  color: var(--color-text-muted);
+}
+
+.resume-excerpt {
+  background: var(--color-surface-soft);
+  border-left: 3px solid var(--color-border-dark);
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+}
+
+.resume-candidate-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.resume-candidate-form .wide {
+  grid-column: 1 / -1;
+}
+
+.confidence-high {
+  background: var(--color-success-soft);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.confidence-medium {
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.confidence-low {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.resume-sticky-actions {
+  align-items: center;
+  bottom: 0;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px;
+  position: sticky;
+  z-index: 8;
+}
+
+.resume-sticky-actions strong {
+  color: var(--color-primary-800);
+  font-size: 22px;
+}
+
+.resume-sticky-actions span {
+  color: var(--color-text-muted);
+  margin-left: 6px;
+}

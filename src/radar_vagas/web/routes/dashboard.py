@@ -28,5 +28,5 @@ def dashboard(
     return render(
         request,
         "dashboard.html",
-        {"dashboard": dashboard_context(session, page_size=ui.page_size)},
+        {"dashboard": dashboard_context(session, page_size=ui.page_size, timezone=ui.timezone)},
     )

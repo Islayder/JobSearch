@@ -11,7 +11,8 @@ sempre exige revisao humana antes de criar ou ativar um perfil.
 3. O texto e extraido para blocos intermediarios com pagina, ordem, tipo e
    dica de secao.
 4. Um parser deterministico cria candidatos isolados para revisao.
-5. O usuario edita, confirma, remove ou restaura cada candidato.
+5. O usuario edita, confirma, remove ou restaura cada candidato em uma tela com
+   indice por secao, resumo de pendencias e acoes fixas de confirmacao.
 6. Somente itens confirmados ou editados entram em `ProfessionalProfileInput`.
 7. A confirmacao valida o perfil pelo mesmo servico de dominio usado pelos
    demais fluxos e so ativa a versao quando a opcao "Ativar agora" estiver
@@ -19,6 +20,14 @@ sempre exige revisao humana antes de criar ou ativar um perfil.
 
 GETs nunca alteram dados. Todas as acoes de upload, edicao, descarte,
 confirmacao e limpeza exigem CSRF.
+
+## Interface Web
+
+O upload usa uma dropzone grande com formatos, limite de 8 MB e aviso de
+privacidade. A revisao organiza candidatos em Resumo, Experiencias, Projetos,
+Formacao, Habilidades, Idiomas, Ambiguos e Avisos. A navegacao interna evita
+uma lista interminavel e as acoes de salvar, confirmar, remover, restaurar,
+descartar, limpar e confirmar continuam protegidas por CSRF.
 
 ## Formatos
 

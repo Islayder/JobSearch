@@ -18,7 +18,6 @@ O `.gitignore` cobre:
 - `data/resumes/`;
 - `data/curricula/`;
 - `data/backups/`;
-- curriculos e resumes por padrao de nome;
 - `config/profile.local.yaml`;
 - `config/professional_profile.local.yaml`;
 - `config/ui.local.yaml`;
@@ -30,6 +29,16 @@ de usuario real, e-mails pessoais, telefones, nomes reais de curriculo, cookies,
 tokens, links reais de reuniao e bancos SQLite locais nao devem aparecer em
 arquivos versionados. Quando for necessario demonstrar um caminho local, use um
 valor ficticio como `C:\Users\ExampleUser\...`.
+
+Curriculos e resumes reais continuam fora do Git por diretorio sensivel ou por
+decisao operacional. Codigo, templates, documentacao, testes e fixtures
+sinteticas nao devem ser ignorados apenas porque possuem `resume`, `curriculo`
+ou `currículo` no nome.
+
+Assets da interface web sao locais e versionaveis quando nao contem dados
+pessoais: CSS, JavaScript, SVGs genericos e componentes Jinja. Screenshots de
+validacao visual, bancos, relatorios, curriculos reais e arquivos importados
+continuam fora do Git.
 
 ## Curriculos
 

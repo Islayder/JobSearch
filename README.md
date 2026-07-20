@@ -171,6 +171,12 @@ radar web
 radar web --port 8001 --no-open-browser
 ```
 
+Na interface web, a experiencia visual usa um app shell local com sidebar,
+header com busca rapida, breadcrumbs, estados vazios, cards operacionais,
+alertas acessiveis, tema claro/escuro e CSS modular sem CDN ou framework
+externo. A navegacao preserva as rotas existentes da CLI/web e nenhuma tela
+executa candidatura automaticamente.
+
 Na interface web, uploads de perfil sao processados em memoria com limite de
 tamanho e nao ficam gravados em `data/imports`. A criacao manual de perfil salva
 uma nova versao estruturada diretamente no banco; habilidades digitadas sem
@@ -269,6 +275,7 @@ ignorados.
 - `docs/application-history-import.md`
 - `docs/calendar.md`
 - `docs/web-interface.md`
+- `docs/design-system.md`
 - `docs/local-setup.md`
 - `docs/privacy-policy.md`
 - `docs/collector-development-playbook.md`

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -11,6 +12,8 @@ from radar_vagas.config.loaders import load_ui_config
 from radar_vagas.config.settings import Settings
 from radar_vagas.domain.enums import (
     ApplicationEventType,
+    ApplicationStage,
+    ApplicationStatus,
     parse_enum_value,
 )
 from radar_vagas.web.dependencies import get_session, get_settings
@@ -55,11 +58,13 @@ def applications(
     }
     ui = load_ui_config(settings.config_dir)
     filters = parse_application_filters(raw_filters, timezone=ui.timezone)
+    applications_view = applications_list(session, filters=filters)
     return render(
         request,
         "applications.html",
         {
-            "applications": applications_list(session, filters=filters),
+            "applications": applications_view,
+            "application_summary": _application_summary(applications_view),
             "filters": {key: value or "" for key, value in raw_filters.items()},
             "shortcuts": APPLICATION_SHORTCUTS,
             "statuses": APPLICATION_STATUS_LABELS,
@@ -143,3 +148,46 @@ APPLICATION_EVENT_SHORTCUTS = [
     (ApplicationEventType.OFFER_RECEIVED, "Oferta"),
     (ApplicationEventType.WITHDRAWN, "Retirada"),
 ]
+
+
+def _application_summary(applications: Sequence[object]) -> dict[str, int]:
+    active = 0
+    terminal = 0
+    interviews = 0
+    tests_cases = 0
+    for application in applications:
+        status = getattr(application, "status", None)
+        stage = getattr(application, "stage", None)
+        if status in {
+            ApplicationStatus.SUBMITTED,
+            ApplicationStatus.TEST,
+            ApplicationStatus.INTERVIEW,
+            ApplicationStatus.FINAL_STAGE,
+            ApplicationStatus.OFFER,
+        }:
+            active += 1
+        if status in {
+            ApplicationStatus.REJECTED,
+            ApplicationStatus.WITHDRAWN,
+            ApplicationStatus.CLOSED,
+        }:
+            terminal += 1
+        if stage in {
+            ApplicationStage.INTERVIEW_SCHEDULED,
+            ApplicationStage.INTERVIEW_COMPLETED,
+        }:
+            interviews += 1
+        if stage in {
+            ApplicationStage.ASSESSMENT_RECEIVED,
+            ApplicationStage.ASSESSMENT_COMPLETED,
+            ApplicationStage.CASE_RECEIVED,
+            ApplicationStage.CASE_SUBMITTED,
+        }:
+            tests_cases += 1
+    return {
+        "total": len(applications),
+        "active": active,
+        "terminal": terminal,
+        "interviews": interviews,
+        "tests_cases": tests_cases,
+    }

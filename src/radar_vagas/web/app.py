@@ -5,9 +5,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
@@ -18,6 +19,7 @@ from radar_vagas.persistence.database import create_sqlite_engine, session_facto
 from radar_vagas.persistence.migrations import run_migrations
 from radar_vagas.web.collection import LocalCollectionRunner
 from radar_vagas.web.routes import router
+from radar_vagas.web.routes.common import NAV_ITEMS, _page_chrome
 from radar_vagas.web.sanitization import sanitize_message
 from radar_vagas.web.security import (
     apply_security_headers,
@@ -83,8 +85,8 @@ def create_app(settings: Settings | None = None, *, debug: bool = False) -> Fast
             raise exc
         return _error_response(request, str(exc), status_code=400)
 
-    @app.exception_handler(HTTPException)
-    async def http_error_handler(request: Request, exc: HTTPException) -> Response:
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error_handler(request: Request, exc: StarletteHTTPException) -> Response:
         if debug and exc.status_code >= 500:
             raise exc
         detail = exc.detail if isinstance(exc.detail, str) else "Solicitacao invalida."
@@ -125,6 +127,8 @@ def _error_response(request: Request, message: str, *, status_code: int) -> Resp
                 "request": request,
                 "ui": ui,
                 "message": None,
+                "nav_items": NAV_ITEMS,
+                "page_chrome": _page_chrome(request.url.path, {}),
                 "error_message": message,
                 "status_code": status_code,
                 "csrf_token": getattr(request.state, "csrf_token", ""),

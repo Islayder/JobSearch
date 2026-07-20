@@ -1,256 +1,297 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}{{ job.canonical_title }} - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>{{ job.canonical_title }}</h1>
-      <p>{{ job.company.canonical_name }} · {{ job.work_model|label }} · {{ job.employment_type|label }}</p>
-    </div>
+  {% set header_action %}
     <div class="actions">
       {% if application_url %}
-        <a class="button" href="{{ application_url }}" target="_blank" rel="noopener noreferrer">Pagina oficial</a>
+        <a class="button button-primary" href="{{ application_url }}" target="_blank" rel="noopener noreferrer">Abrir pagina oficial</a>
       {% endif %}
-      <a class="button secondary" href="/jobs">Voltar</a>
+      <a class="button button-secondary" href="/jobs">Voltar para vagas</a>
     </div>
-  </section>
+  {% endset %}
+  {{ ui_components.page_header(title=job.canonical_title, description=job.company.canonical_name ~ " · " ~ (job.work_model|label) ~ " · " ~ (job.employment_type|label), action=header_action) }}
 
-  <section class="detail">
-    <article class="card">
-      <h2>Descricao</h2>
-      <p>{{ job.description }}</p>
-      {% if job.requirements %}
-        <h3>Requisitos</h3>
-        <p>{{ job.requirements }}</p>
-      {% endif %}
-      {% if job.responsibilities %}
-        <h3>Responsabilidades</h3>
-        <p>{{ job.responsibilities }}</p>
-      {% endif %}
-      {% if job.technologies_json|json_list %}
-        <h3>Tecnologias</h3>
-        <p>
-          {% for tech in job.technologies_json|json_list %}
-            <span class="badge">{{ tech }}</span>
-          {% endfor %}
-        </p>
-      {% endif %}
-    </article>
+  <section class="detail-layout">
+    <div class="section-stack">
+      <section class="card">
+        <div class="badge-row">
+          <span class="badge {{ job.status|status_class }}">{{ job.status|label }}</span>
+          <span class="badge {{ review_state|status_class }}">{{ review_state|label }}</span>
+          <span class="badge">{{ job.country or "Pais nao informado" }}</span>
+          <span class="badge">{{ job.published_at|date(ui.timezone) if job.published_at else "Publicacao nao informada" }}</span>
+        </div>
+        <h2>Resumo</h2>
+        <p>{{ job.description|preview(360) }}</p>
+      </section>
 
-    <aside class="card">
-      <h2>Status</h2>
-      <p><span class="badge {{ job.status|status_class }}">{{ job.status|label }}</span></p>
-      <p>Revisao: {{ review_state|label }}</p>
-      {% if job.decision %}
-        <p>Elegibilidade: {{ job.decision.eligibility_status|label }}</p>
-        <p>Ranking: {{ job.decision.ranking_score if job.decision.ranking_score is not none else "-" }}</p>
-        <p>Relevancia: {{ job.decision.relevance_status|label }}</p>
-      {% endif %}
-      <div class="actions">
-        {% if actions.seen %}
-          <form class="inline" action="/jobs/{{ job.id }}/seen" method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="secondary" type="submit">Vista</button>
-          </form>
+      <section class="card">
+        <h2>Descricao</h2>
+        <p class="description-block">{{ job.description }}</p>
+        {% if job.responsibilities %}
+          <h3>Responsabilidades</h3>
+          <p class="description-block">{{ job.responsibilities }}</p>
         {% endif %}
-        {% if actions.shortlist %}
-          <form class="inline" action="/jobs/{{ job.id }}/shortlist" method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="secondary" type="submit">Favoritar</button>
-          </form>
+        {% if job.requirements %}
+          <h3>Requisitos</h3>
+          <p class="description-block">{{ job.requirements }}</p>
         {% endif %}
-        {% if actions.unshortlist %}
-          <form class="inline" action="/jobs/{{ job.id }}/unshortlist" method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="secondary" type="submit">Remover favorito</button>
-          </form>
+        {% if job.technologies_json|json_list %}
+          <h3>Tecnologias</h3>
+          <p class="badge-row">
+            {% for tech in job.technologies_json|json_list %}
+              <span class="badge">{{ tech }}</span>
+            {% endfor %}
+          </p>
         {% endif %}
-        {% if actions.restore %}
-          <form class="inline" action="/jobs/{{ job.id }}/restore" method="post">
+      </section>
+
+      <section class="card compatibility-panel">
+        <div class="section-heading">
+          <div>
+            <h2>Compatibilidade</h2>
+            <p>Analise comparando a vaga ao perfil profissional ativo.</p>
+          </div>
+          <form class="inline" action="/jobs/{{ job.id }}/compare" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="secondary" type="submit">Restaurar</button>
+            <button class="secondary" type="submit">Recalcular compatibilidade</button>
           </form>
+        </div>
+
+        {% if stale_comparison %}
+          <div class="notice warning">
+            Existe uma análise anterior, mas ela está desatualizada.
+            {% if comparison_freshness.reasons %}
+              Causa: {{ comparison_freshness.reasons|join(", ") }}.
+            {% endif %}
+          </div>
         {% endif %}
-        <form class="inline" action="/jobs/{{ job.id }}/compare" method="post">
+
+        {% if comparison %}
+          <div class="compatibility-score">
+            <strong>{{ comparison.overall_score }}/100</strong>
+            <div>
+              <h3>{{ comparison.summary }}</h3>
+              <p class="muted">Perfil v{{ comparison.profile_version.version_number }} · {{ comparison.created_at|datetime(ui.timezone) }}</p>
+              <span class="badge badge-success">Analise atual</span>
+            </div>
+          </div>
+          {% if comparison.attention_points_json|json_list %}
+            <div class="alert alert-warning" role="status">
+              <span class="alert-icon"></span>
+              <div>
+                <strong>Pontos de atencao</strong>
+                <ul>
+                  {% for point in comparison.attention_points_json|json_list %}
+                    <li>{{ point }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </div>
+          {% endif %}
+          <p class="muted">Habilidade declarada sem evidencia aparece como nao comprovada; isso nao significa incapacidade.</p>
+
+          {% set groups = [
+            ("MATCHED", "Pontos atendidos", "success"),
+            ("PARTIAL", "Pontos parciais", "warning"),
+            ("NOT_PROVEN", "Nao comprovados", "warning"),
+            ("NOT_MATCHED", "Incompatibilidades objetivas", "danger"),
+            ("AMBIGUOUS", "Ambiguos", "info"),
+          ] %}
+          <div class="requirement-groups">
+            {% for status_value, group_title, tone in groups %}
+              <section>
+                <h3>{{ group_title }}</h3>
+                <div class="list">
+                  {% for match in comparison.requirement_matches if match.match_status.value == status_value %}
+                    <article class="requirement-card">
+                      <span class="badge {{ match.match_status|status_class }}">{{ match.match_status|label }}</span>
+                      <h4>{{ match.requirement_text }}</h4>
+                      <div class="muted">{{ match.requirement_kind|label }} · fonte {{ match.requirement_source or "legado" }} · peso {{ match.weight }}</div>
+                      {% if match.original_text %}
+                        <p>Original: {{ match.original_text }}</p>
+                      {% endif %}
+                      <p>{{ match.explanation }}</p>
+                      {% if match.evidence_json|json_list %}
+                        <p class="muted">Evidencias: {{ (match.evidence_json|json_list)|join(" · ") }}</p>
+                      {% endif %}
+                      {% if match.term_results_json|json_list %}
+                        <details>
+                          <summary>Detalhe dos termos</summary>
+                          <ul>
+                            {% for term in match.term_results_json|json_list %}
+                              <li>{{ term }}</li>
+                            {% endfor %}
+                          </ul>
+                        </details>
+                      {% endif %}
+                    </article>
+                  {% endfor %}
+                </div>
+              </section>
+            {% endfor %}
+          </div>
+
+          <details>
+            <summary>Detalhes tecnicos da analise</summary>
+            <dl>
+              <dt>ID da comparacao</dt><dd>{{ comparison_identity }}</dd>
+              <dt>Rules version</dt><dd>{{ comparison.rules_version }}</dd>
+              <dt>Hash da vaga</dt><dd>{{ comparison.job_content_hash }}</dd>
+              <dt>Perfil usado</dt><dd>{{ comparison.profile_version_id }}</dd>
+            </dl>
+          </details>
+        {% else %}
+          {{ ui_components.empty_state("Nenhuma comparacao atual calculada.", "Use o botao de recalculo para comparar esta vaga com o perfil ativo.", icon="check") }}
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="detail-aside">
+      <section class="card">
+        <h2>Acoes da vaga</h2>
+        <div class="actions">
+          {% if actions.seen %}
+            <form class="inline" action="/jobs/{{ job.id }}/seen" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">Marcar vista</button>
+            </form>
+          {% endif %}
+          {% if actions.shortlist %}
+            <form class="inline" action="/jobs/{{ job.id }}/shortlist" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">Favoritar</button>
+            </form>
+          {% endif %}
+          {% if actions.unshortlist %}
+            <form class="inline" action="/jobs/{{ job.id }}/unshortlist" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">Remover favorito</button>
+            </form>
+          {% endif %}
+          {% if actions.restore %}
+            <form class="inline" action="/jobs/{{ job.id }}/restore" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="secondary" type="submit">Restaurar</button>
+            </form>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Informacoes</h2>
+        <p><strong>Empresa</strong><br>{{ job.company.canonical_name }}</p>
+        <p><strong>Local</strong><br>{{ job.city or "-" }}{% if job.state %}/{{ job.state }}{% endif %}</p>
+        <p><strong>Modelo</strong><br>{{ job.work_model|label }}</p>
+        <p><strong>Tipo</strong><br>{{ job.employment_type|label }}</p>
+        {% if job.decision %}
+          <p><strong>Elegibilidade</strong><br>{{ job.decision.eligibility_status|label }}</p>
+          <p><strong>Ranking</strong><br>{{ job.decision.ranking_score if job.decision.ranking_score is not none else "-" }}</p>
+          <p><strong>Relevancia</strong><br>{{ job.decision.relevance_status|label }}</p>
+        {% endif %}
+      </section>
+
+      {% if actions.apply %}
+        <form class="card form-card" action="/jobs/{{ job.id }}/apply" method="post" data-confirm="Registrar candidatura manual?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="secondary" type="submit">Comparar</button>
+          <h2>Registrar candidatura</h2>
+          <div class="field">
+            <label for="applied_at">Data/hora</label>
+            <input id="applied_at" name="applied_at" type="datetime-local">
+          </div>
+          <div class="field">
+            <label for="platform">Plataforma</label>
+            <input id="platform" name="platform" placeholder="gupy">
+          </div>
+          <div class="field">
+            <label for="external_reference">Referencia</label>
+            <input id="external_reference" name="external_reference">
+          </div>
+          <div class="field">
+            <label for="apply_notes">Notas</label>
+            <textarea id="apply_notes" name="notes"></textarea>
+          </div>
+          <button type="submit">Registrar candidatura</button>
         </form>
-      </div>
-    </aside>
-  </section>
+      {% endif %}
 
-  <section class="grid">
-    {% if actions.dismiss %}
-      <form class="card" action="/jobs/{{ job.id }}/dismiss" method="post" data-confirm="Descartar esta vaga?">
+      {% if actions.dismiss %}
+        <form class="card form-card" action="/jobs/{{ job.id }}/dismiss" method="post" data-confirm="Descartar esta vaga?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <h2>Descartar vaga</h2>
+          <div class="field">
+            <label for="reason_code">Motivo</label>
+            <select id="reason_code" name="reason_code">
+              {% for value, text in dismiss_reasons %}
+                <option value="{{ value }}">{{ text }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="dismiss_notes">Notas</label>
+            <textarea id="dismiss_notes" name="notes"></textarea>
+          </div>
+          <button class="danger" type="submit">Descartar</button>
+        </form>
+      {% endif %}
+
+      <form class="card form-card" action="/jobs/{{ job.id }}/events" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <h2>Descartar</h2>
+        <h2>Adicionar compromisso</h2>
         <div class="field">
-          <label for="reason_code">Motivo</label>
-          <select id="reason_code" name="reason_code">
-            {% for value, text in dismiss_reasons %}
-              <option value="{{ value }}">{{ text }}</option>
+          <label for="event_type">Tipo</label>
+          <select id="event_type" name="event_type">
+            {% for value, text in event_types.items() %}
+              <option value="{{ value.value }}">{{ text }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="field">
-          <label for="dismiss_notes">Notas</label>
-          <textarea id="dismiss_notes" name="notes"></textarea>
+          <label for="title">Titulo</label>
+          <input id="title" name="title" required>
         </div>
-        <button class="danger" type="submit">Descartar</button>
+        <div class="field">
+          <label for="starts_at">Inicio</label>
+          <input id="starts_at" name="starts_at" type="datetime-local">
+        </div>
+        <div class="field">
+          <label for="ends_at">Fim</label>
+          <input id="ends_at" name="ends_at" type="datetime-local">
+        </div>
+        <div class="field">
+          <label for="event_notes">Notas</label>
+          <textarea id="event_notes" name="notes"></textarea>
+        </div>
+        <button type="submit">Adicionar compromisso</button>
       </form>
-    {% endif %}
 
-    {% if actions.apply %}
-      <form class="card" action="/jobs/{{ job.id }}/apply" method="post" data-confirm="Registrar candidatura manual?">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <h2>Registrar candidatura</h2>
-        <div class="field">
-          <label for="applied_at">Data/hora</label>
-          <input id="applied_at" name="applied_at" type="datetime-local">
-        </div>
-        <div class="field">
-          <label for="platform">Plataforma</label>
-          <input id="platform" name="platform" placeholder="gupy">
-        </div>
-        <div class="field">
-          <label for="external_reference">Referencia</label>
-          <input id="external_reference" name="external_reference">
-        </div>
-        <div class="field">
-          <label for="apply_notes">Notas</label>
-          <textarea id="apply_notes" name="notes"></textarea>
-        </div>
-        <button type="submit">Registrar</button>
-      </form>
-    {% endif %}
-  </section>
-
-  <section class="grid">
-    <form class="card" action="/jobs/{{ job.id }}/events" method="post">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <h2>Novo evento</h2>
-      <div class="field">
-        <label for="event_type">Tipo</label>
-        <select id="event_type" name="event_type">
-          {% for value, text in event_types.items() %}
-            <option value="{{ value.value }}">{{ text }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="title">Titulo</label>
-        <input id="title" name="title" required>
-      </div>
-      <div class="field">
-        <label for="starts_at">Inicio</label>
-        <input id="starts_at" name="starts_at" type="datetime-local">
-      </div>
-      <div class="field">
-        <label for="ends_at">Fim</label>
-        <input id="ends_at" name="ends_at" type="datetime-local">
-      </div>
-      <div class="field">
-        <label for="event_notes">Notas</label>
-        <textarea id="event_notes" name="notes"></textarea>
-      </div>
-      <button type="submit">Adicionar</button>
-    </form>
-
-    <div class="card">
-      <h2>Compatibilidade</h2>
-      {% if stale_comparison %}
-        <p class="notice warning">Existe uma análise anterior, mas ela está desatualizada</p>
-        {% if comparison_freshness.reasons %}
-          <p class="muted">Causa: {{ comparison_freshness.reasons|join(", ") }}.</p>
-        {% endif %}
-      {% endif %}
-      {% if comparison %}
-        <p><strong>{{ comparison.overall_score }}/100</strong></p>
-        <p>{{ comparison.summary }}</p>
-        <p class="muted">Perfil v{{ comparison.profile_version.version_number }} · {{ comparison.created_at|datetime(ui.timezone) }} · regras {{ comparison.rules_version }} · id {{ comparison_identity }}</p>
-        {% if comparison.attention_points_json|json_list %}
-          <h3>Pontos de atencao</h3>
-          <ul>
-            {% for point in comparison.attention_points_json|json_list %}
-              <li>{{ point }}</li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-        <p class="muted">Habilidade declarada sem evidencia aparece como nao comprovada; isso nao significa incapacidade.</p>
+      <section class="card">
+        <h2>Candidaturas</h2>
         <div class="list">
-          {% for match in comparison.requirement_matches %}
-            <div class="row">
-              <span class="badge {{ match.match_status|status_class }}">{{ match.match_status|label }}</span>
-              <strong>{{ match.requirement_text }}</strong>
-              <div class="muted">
-                {{ match.requirement_kind|label }} · fonte {{ match.requirement_source or "legado" }} · peso {{ match.weight }}
-              </div>
-              {% if match.original_text %}
-                <div>Original: {{ match.original_text }}</div>
-              {% endif %}
-              <div>{{ match.explanation }}</div>
-              {% if match.terms_json|json_list %}
-                <div class="muted">Termos: {{ (match.terms_json|json_list)|join(", ") }}</div>
-              {% endif %}
-              {% if match.evidence_json|json_list %}
-                <div class="muted">Evidencias: {{ (match.evidence_json|json_list)|join(" · ") }}</div>
-              {% endif %}
-              {% if match.term_results_json|json_list %}
-                <details>
-                  <summary>Detalhe dos termos</summary>
-                  <ul>
-                    {% for term in match.term_results_json|json_list %}
-                      <li>{{ term }}</li>
-                    {% endfor %}
-                  </ul>
-                </details>
-              {% endif %}
-            </div>
+          {% for application in job.applications %}
+            <article class="row">
+              <a href="/applications/{{ application.id }}">Candidatura {{ application.id }}</a>
+              <div class="muted">{{ application.status|label }} · {{ application.stage|label }}</div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhuma candidatura registrada.", "Registre somente depois de enviar pelo site oficial.", icon="send") }}
           {% endfor %}
         </div>
-      {% else %}
-        <p class="empty">Nenhuma comparacao atual calculada.</p>
-      {% endif %}
-      {% if historical_comparisons %}
-        <h3>Historico de analises</h3>
-        <div class="list">
-          {% for item in historical_comparisons %}
-            <div class="row">
-              <strong>{{ item.overall_score }}/100</strong>
-              {% if comparison and item.id == comparison.id %}<span class="badge healthy">atual</span>{% endif %}
-              <div class="muted">Perfil v{{ item.profile_version.version_number }} Â· {{ item.created_at|datetime(ui.timezone) }} Â· regras {{ item.rules_version }}</div>
-            </div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    </div>
-  </section>
+      </section>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Candidaturas</h2>
-      <div class="list">
-        {% for application in job.applications %}
-          <div class="row">
-            <a href="/applications/{{ application.id }}">Candidatura {{ application.id }}</a>
-            <div class="muted">{{ application.status|label }} · {{ application.stage|label }}</div>
-          </div>
-        {% else %}
-          <p class="empty">Nenhuma candidatura registrada.</p>
-        {% endfor %}
-      </div>
-    </div>
-    <div class="card">
-      <h2>Agenda da vaga</h2>
-      <div class="list">
-        {% for event in job.career_events %}
-          <div class="row">
-            <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
-            <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
-          </div>
-        {% else %}
-          <p class="empty">Nenhum evento.</p>
-        {% endfor %}
-      </div>
-    </div>
+      <section class="card">
+        <h2>Agenda da vaga</h2>
+        <div class="list">
+          {% for event in job.career_events %}
+            <article class="row">
+              <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
+              <div class="muted">{{ event.starts_at|datetime(ui.timezone) }} · {{ event.confirmation_status|label }}</div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum evento ligado.", "Compromissos criados para a vaga aparecem aqui.", icon="calendar") }}
+          {% endfor %}
+        </div>
+      </section>
+    </aside>
   </section>
 {% endblock %}

@@ -73,11 +73,12 @@ radar cancel-agenda-event 1
 ## Interface Web
 
 A tela `/agenda` renderiza calendario mensal no servidor, com semanas completas
-de segunda a domingo, navegacao de mes anterior/proximo, destaque do dia atual,
-lista do periodo e secao para eventos sem data. Filtros aceitam tipo, origem,
-status, vaga e candidatura. A criacao usa seletores de vaga e candidatura; IDs
-continuam sendo persistidos internamente, mas nao sao o fluxo principal para o
-usuario.
+de segunda a domingo, navegacao de mes anterior/proximo, botao de hoje,
+destaque do dia atual, painel lateral com legenda, lista do periodo e secao
+para eventos sem data. Filtros aceitam tipo, origem, status, vaga e candidatura.
+A criacao usa secoes visuais, seletores de vaga e candidatura, data/hora,
+local, link e notas; IDs continuam sendo persistidos internamente, mas nao sao o
+fluxo principal para o usuario.
 
 Os nomes de mes da interface usam uma lista fixa em portugues, independente do
 locale do sistema operacional. A lista do periodo mostra apenas eventos datados

@@ -47,6 +47,11 @@ explicacao. Essa proveniencia nao muda as tabelas estruturadas de habilidade,
 experiencia, projeto, formacao ou idioma; ela fica no `raw_profile_json` para
 auditoria da versao.
 
+A tela de perfil destaca perfil ativo, headline, versao, origem, habilidades,
+evidencias, experiencias, projetos e timeline de versoes. Configuracoes locais
+como timezone, tamanho de pagina, ordenacao e tema ficam em area visual separada
+para nao misturar preferencias da interface com dados profissionais.
+
 No formulario manual, habilidades digitadas no textarea e habilidades em linhas
 estruturadas sao lidas em etapas separadas. Depois, o Radar faz merge por nome
 normalizado. Categoria, nivel e evidencia ficam vinculados somente a linha

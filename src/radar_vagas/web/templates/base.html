@@ -3,27 +3,33 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Radar de Vagas{% endblock %}</title>
+    <title>{% block title %}{{ page_chrome.title }} - Radar de Vagas{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
     <script src="{{ url_for('static', path='app.js') }}" defer></script>
   </head>
-  <body>
-    <header class="topbar">
-      <a class="brand" href="/">Radar de Vagas</a>
-      <nav class="nav" aria-label="Principal">
-        <a href="/">Dashboard</a>
-        <a href="/jobs">Vagas</a>
-        <a href="/applications">Candidaturas</a>
-        <a href="/agenda">Agenda</a>
-        <a href="/profile">Perfil</a>
-        <a href="/sources">Fontes</a>
-      </nav>
-    </header>
-    <main class="shell">
-      {% if message %}
-        <div class="notice">{{ message }}</div>
-      {% endif %}
-      {% block content %}{% endblock %}
-    </main>
+  <body data-server-theme="{{ ui.theme_preference }}">
+    {% import "components/navigation.html" as nav with context %}
+    {% import "components/ui.html" as ui_components with context %}
+    <a class="skip-link" href="#conteudo">Ir para o conteudo</a>
+    <div class="app-shell">
+      {{ nav.sidebar(nav_items, page_chrome.active_key) }}
+      <div class="app-workspace">
+        {{ nav.header() }}
+        <main class="app-main" id="conteudo" tabindex="-1">
+          {% if message %}
+            <div class="toast-stack">
+              {{ ui_components.alert(message, tone="success", title="Atualizacao salva") }}
+            </div>
+          {% endif %}
+          {% block content %}{% endblock %}
+        </main>
+        <footer class="app-footer">
+          <span>Radar de Vagas</span>
+          <span>Dados armazenados localmente</span>
+          <span>Nenhuma candidatura e enviada automaticamente</span>
+          <a href="/settings">Configuracoes</a>
+        </footer>
+      </div>
+    </div>
   </body>
 </html>

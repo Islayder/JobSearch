@@ -1,0 +1,149 @@
+form.inline {
+  display: inline;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field.compact {
+  max-width: 140px;
+}
+
+label,
+.field-label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+input,
+select,
+textarea {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  min-height: 40px;
+  padding: 9px 11px;
+  width: 100%;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--color-text-muted) 75%, transparent);
+}
+
+textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled,
+input[readonly],
+textarea[readonly] {
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+}
+
+.check {
+  align-items: center;
+  color: var(--color-text);
+  display: inline-flex;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.check input {
+  accent-color: var(--color-primary-600);
+  min-height: auto;
+  width: auto;
+}
+
+.quick-search {
+  align-items: center;
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
+}
+
+.quick-search input {
+  background: transparent;
+  border: 0;
+  min-height: 34px;
+  padding: 6px;
+}
+
+.quick-search button {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.filters {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.filter-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.filter-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.form-card {
+  display: grid;
+  gap: 14px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid .wide,
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+.repeat-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 10px;
+  padding: 12px;
+}
+
+.repeat-row textarea {
+  grid-column: 1 / -1;
+}

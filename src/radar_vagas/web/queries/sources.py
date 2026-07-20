@@ -39,6 +39,13 @@ def sources_context(session: Session) -> dict[str, Any]:
         "queries": _queries(session),
         "recent_runs": recent_source_runs(session, limit=20),
         "failed_runs": sum(1 for row in rows if row.state == "failing"),
+        "health_counts": {
+            "healthy": sum(1 for row in rows if row.state == "healthy"),
+            "warning": sum(1 for row in rows if row.state == "warning"),
+            "failing": sum(1 for row in rows if row.state == "failing"),
+            "never_run": sum(1 for row in rows if row.state == "never-run"),
+            "disabled": sum(1 for row in rows if row.state == "disabled"),
+        },
     }
 
 

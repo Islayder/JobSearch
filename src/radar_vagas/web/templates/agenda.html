@@ -1,204 +1,233 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Agenda - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Agenda</h1>
-      <p>Compromissos confirmados, sugestoes e itens sem data.</p>
-    </div>
+  {% set header_action %}
     <div class="actions">
-      <a class="button secondary" href="/agenda?{{ agenda.previous_query }}">Mes anterior</a>
-      <a class="button secondary" href="/agenda?{{ agenda.next_query }}">Proximo mes</a>
+      <a class="button button-secondary" href="/agenda?{{ agenda.previous_query }}">Mes anterior</a>
+      <a class="button button-secondary" href="/agenda">Hoje</a>
+      <a class="button button-secondary" href="/agenda?{{ agenda.next_query }}">Proximo mes</a>
+      <a class="button button-primary" href="#new-event">Novo compromisso</a>
     </div>
-  </section>
+  {% endset %}
+  {{ ui_components.page_header(title=agenda.month_label, description="Compromissos confirmados, sugestoes e itens sem data.", action=header_action) }}
 
-  <form class="toolbar filters" method="get" action="/agenda">
+  <form class="filters" method="get" action="/agenda">
     <input type="hidden" name="year" value="{{ agenda.year }}">
     <input type="hidden" name="month" value="{{ agenda.month }}">
-    <div class="field">
-      <label for="status">Estado</label>
-      <select id="status" name="status">
-        <option value="">Todos</option>
-        {% for value, text in event_statuses.items() %}
-          <option value="{{ value.value }}" {% if filters.status == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
+    <div class="filter-grid">
+      <div class="field">
+        <label for="status">Estado</label>
+        <select id="status" name="status">
+          <option value="">Todos</option>
+          {% for value, text in event_statuses.items() %}
+            <option value="{{ value.value }}" {% if filters.status == value.value %}selected{% endif %}>{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="event_type">Tipo</label>
+        <select id="event_type" name="event_type">
+          <option value="">Todos</option>
+          {% for value, text in event_types.items() %}
+            <option value="{{ value.value }}" {% if filters.event_type == value.value %}selected{% endif %}>{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="source">Origem</label>
+        <select id="source" name="source">
+          <option value="">Todas</option>
+          {% for value, text in event_sources.items() %}
+            <option value="{{ value.value }}" {% if filters.source == value.value %}selected{% endif %}>{{ text }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="job_filter">Vaga</label>
+        <select id="job_filter" name="job_id">
+          <option value="">Todas</option>
+          {% for job in agenda.job_options %}
+            <option value="{{ job.id }}" {% if filters.job_id == job.id|string %}selected{% endif %}>{{ job.company.canonical_name }} · {{ job.canonical_title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="application_filter">Candidatura</label>
+        <select id="application_filter" name="application_id">
+          <option value="">Todas</option>
+          {% for application in agenda.application_options %}
+            <option value="{{ application.id }}" {% if filters.application_id == application.id|string %}selected{% endif %}>{{ application.job.company.canonical_name }} · {{ application.job.canonical_title }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
-    <div class="field">
-      <label for="event_type">Tipo</label>
-      <select id="event_type" name="event_type">
-        <option value="">Todos</option>
-        {% for value, text in event_types.items() %}
-          <option value="{{ value.value }}" {% if filters.event_type == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
+    <div class="filter-actions">
+      <button type="submit">Aplicar filtros</button>
+      <a class="button button-secondary" href="/agenda">Limpar filtros</a>
     </div>
-    <div class="field">
-      <label for="source">Origem</label>
-      <select id="source" name="source">
-        <option value="">Todas</option>
-        {% for value, text in event_sources.items() %}
-          <option value="{{ value.value }}" {% if filters.source == value.value %}selected{% endif %}>{{ text }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="job_filter">Vaga</label>
-      <select id="job_filter" name="job_id">
-        <option value="">Todas</option>
-        {% for job in agenda.job_options %}
-          <option value="{{ job.id }}" {% if filters.job_id == job.id|string %}selected{% endif %}>{{ job.company.canonical_name }} · {{ job.canonical_title }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="application_filter">Candidatura</label>
-      <select id="application_filter" name="application_id">
-        <option value="">Todas</option>
-        {% for application in agenda.application_options %}
-          <option value="{{ application.id }}" {% if filters.application_id == application.id|string %}selected{% endif %}>{{ application.job.company.canonical_name }} · {{ application.job.canonical_title }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <button type="submit">Filtrar</button>
   </form>
 
-  <section class="card">
-    <h2>{{ agenda.month_label }}</h2>
-    <div class="calendar-head">
-      <span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sab</span><span>Dom</span>
+  <section class="calendar-layout">
+    <div class="section-stack">
+      <section class="card">
+        <h2>{{ agenda.month_label }}</h2>
+        <div class="calendar-head">
+          <span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sab</span><span>Dom</span>
+        </div>
+        <div class="calendar-grid" aria-label="Calendario mensal">
+          {% for week in agenda.weeks %}
+            {% for day in week %}
+              <div class="day {% if not day.in_month %}outside{% endif %} {% if day.is_today %}today{% endif %}">
+                <strong>{{ day.day.day }}</strong>
+                {% for event in day.events[:2] %}
+                  <a class="calendar-event" href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
+                  <span class="badge {{ event.confirmation_status|status_class }}">{{ event.event_type|label }} · {{ event.confirmation_status|label }}</span>
+                {% endfor %}
+                {% if day.events|length > 2 %}
+                  <span class="badge badge-info">+ {{ (day.events|length) - 2 }} eventos</span>
+                {% elif not day.events %}
+                  <span class="muted">Sem eventos</span>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+      </section>
+
+      <form class="card form-card" id="new-event" action="/agenda/events" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h2>Novo evento</h2>
+        <div class="form-grid">
+          <div class="field">
+            <label for="new_event_type">Tipo</label>
+            <select id="new_event_type" name="event_type">
+              {% for value, text in event_types.items() %}
+                <option value="{{ value.value }}">{{ text }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="new_status">Estado inicial</label>
+            <select id="new_status" name="status">
+              <option value="CONFIRMED">Confirmado</option>
+              <option value="SUGGESTED">Sugerido</option>
+            </select>
+          </div>
+          <div class="field wide">
+            <label for="new_title">Titulo</label>
+            <input id="new_title" name="title" required>
+          </div>
+          <div class="field">
+            <label for="new_starts_at">Inicio</label>
+            <input id="new_starts_at" name="starts_at" type="datetime-local">
+          </div>
+          <div class="field">
+            <label for="new_ends_at">Fim</label>
+            <input id="new_ends_at" name="ends_at" type="datetime-local">
+          </div>
+          <div class="field">
+            <label for="new_job_id">Vaga</label>
+            <select id="new_job_id" name="job_id">
+              <option value="">Sem vaga vinculada</option>
+              {% for job in agenda.job_options %}
+                <option value="{{ job.id }}">{{ job.company.canonical_name }} · {{ job.canonical_title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="new_application_id">Candidatura</label>
+            <select id="new_application_id" name="application_id">
+              <option value="">Sem candidatura vinculada</option>
+              {% for application in agenda.application_options %}
+                <option value="{{ application.id }}">{{ application.job.company.canonical_name }} · {{ application.job.canonical_title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="new_location">Local</label>
+            <input id="new_location" name="location">
+          </div>
+          <div class="field">
+            <label for="new_meeting_url">Link</label>
+            <input id="new_meeting_url" name="meeting_url">
+          </div>
+          <div class="field wide">
+            <label for="new_notes">Notas</label>
+            <textarea id="new_notes" name="notes"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit">Criar evento</button>
+          <a class="button button-secondary" href="/agenda">Cancelar</a>
+        </div>
+      </form>
     </div>
-    <div class="calendar-grid" aria-label="Calendario mensal">
-      {% for week in agenda.weeks %}
-        {% for day in week %}
-          <div class="day {% if not day.in_month %}outside{% endif %} {% if day.is_today %}today{% endif %}">
-            <strong>{{ day.day.day }}</strong>
-            {% for event in day.events %}
+
+    <aside class="section-stack">
+      <section class="card">
+        <h2>Legenda</h2>
+        <div class="badge-row">
+          <span class="badge badge-info">Entrevista</span>
+          <span class="badge badge-purple">Teste ou case</span>
+          <span class="badge badge-warning">Prazo</span>
+          <span class="badge badge-success">Oferta</span>
+          <span class="badge">Concluido ou cancelado</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Lista do periodo</h2>
+        <div class="list">
+          {% for event in agenda.period_events %}
+            <article class="row">
+              <a href="/agenda/events/{{ event.id }}/edit"><strong>{{ event.title }}</strong></a>
+              <div class="muted">{{ event.event_type|label }} · {{ event.starts_at|datetime(ui.timezone) }}</div>
+              <span class="badge {{ event.confirmation_status|status_class }}">{{ event.confirmation_status|label }}</span>
+              <div class="actions">
+                {% if event.confirmation_status.value == "SUGGESTED" %}
+                  <form class="inline" action="/agenda/events/{{ event.id }}/confirm" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="secondary" type="submit">Confirmar</button>
+                  </form>
+                  <form class="inline" action="/agenda/events/{{ event.id }}/dismiss" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="secondary" type="submit">Dispensar</button>
+                  </form>
+                {% endif %}
+                {% if event.confirmation_status.value == "CONFIRMED" %}
+                  <form class="inline" action="/agenda/events/{{ event.id }}/complete" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="secondary" type="submit">Concluir</button>
+                  </form>
+                {% endif %}
+                {% if event.confirmation_status.value in ["SUGGESTED", "CONFIRMED"] %}
+                  <form class="inline" action="/agenda/events/{{ event.id }}/cancel" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="danger" type="submit">Cancelar</button>
+                  </form>
+                {% endif %}
+              </div>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum evento encontrado.", "Crie um compromisso ou ajuste os filtros da agenda.", "Novo compromisso", "#new-event", icon="calendar") }}
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Sem data</h2>
+        <div class="list">
+          {% for event in agenda.undated_events %}
+            <article class="row">
               <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
               <span class="badge {{ event.confirmation_status|status_class }}">{{ event.confirmation_status|label }}</span>
-            {% else %}
-              <span class="muted">Sem eventos</span>
-            {% endfor %}
-          </div>
-        {% endfor %}
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="grid">
-    <form class="card" action="/agenda/events" method="post">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <h2>Novo evento</h2>
-      <div class="field">
-        <label for="new_event_type">Tipo</label>
-        <select id="new_event_type" name="event_type">
-          {% for value, text in event_types.items() %}
-            <option value="{{ value.value }}">{{ text }}</option>
+            </article>
+          {% else %}
+            {{ ui_components.empty_state("Nenhum item sem data.", "Eventos sem horario aparecem aqui para revisao.", icon="calendar") }}
           {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="new_title">Titulo</label>
-        <input id="new_title" name="title" required>
-      </div>
-      <div class="field">
-        <label for="new_status">Estado inicial</label>
-        <select id="new_status" name="status">
-          <option value="CONFIRMED">Confirmado</option>
-          <option value="SUGGESTED">Sugerido</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="new_starts_at">Inicio</label>
-        <input id="new_starts_at" name="starts_at" type="datetime-local">
-      </div>
-      <div class="field">
-        <label for="new_ends_at">Fim</label>
-        <input id="new_ends_at" name="ends_at" type="datetime-local">
-      </div>
-      <div class="field">
-        <label for="new_job_id">Vaga</label>
-        <select id="new_job_id" name="job_id">
-          <option value="">Sem vaga vinculada</option>
-          {% for job in agenda.job_options %}
-            <option value="{{ job.id }}">{{ job.company.canonical_name }} · {{ job.canonical_title }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="new_application_id">Candidatura</label>
-        <select id="new_application_id" name="application_id">
-          <option value="">Sem candidatura vinculada</option>
-          {% for application in agenda.application_options %}
-            <option value="{{ application.id }}">{{ application.job.company.canonical_name }} · {{ application.job.canonical_title }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="new_location">Local</label>
-        <input id="new_location" name="location">
-      </div>
-      <div class="field">
-        <label for="new_meeting_url">Link</label>
-        <input id="new_meeting_url" name="meeting_url">
-      </div>
-      <div class="field">
-        <label for="new_notes">Notas</label>
-        <textarea id="new_notes" name="notes"></textarea>
-      </div>
-      <button type="submit">Criar evento</button>
-    </form>
-
-    <div class="card">
-      <h2>Lista do periodo</h2>
-      <div class="list">
-        {% for event in agenda.period_events %}
-          <div class="row">
-            <a href="/agenda/events/{{ event.id }}/edit"><strong>{{ event.title }}</strong></a>
-            <div class="muted">{{ event.event_type|label }} · {{ event.starts_at|datetime(ui.timezone) }}</div>
-            <div class="actions">
-              {% if event.confirmation_status.value == "SUGGESTED" %}
-                <form class="inline" action="/agenda/events/{{ event.id }}/confirm" method="post">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button class="secondary" type="submit">Confirmar</button>
-                </form>
-                <form class="inline" action="/agenda/events/{{ event.id }}/dismiss" method="post">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button class="secondary" type="submit">Dispensar</button>
-                </form>
-              {% endif %}
-              {% if event.confirmation_status.value == "CONFIRMED" %}
-                <form class="inline" action="/agenda/events/{{ event.id }}/complete" method="post">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button class="secondary" type="submit">Concluir</button>
-                </form>
-              {% endif %}
-              {% if event.confirmation_status.value in ["SUGGESTED", "CONFIRMED"] %}
-                <form class="inline" action="/agenda/events/{{ event.id }}/cancel" method="post">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button class="danger" type="submit">Cancelar</button>
-                </form>
-              {% endif %}
-            </div>
-          </div>
-        {% else %}
-          <p class="empty">Nenhum evento encontrado.</p>
-        {% endfor %}
-      </div>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Sem data</h2>
-    <div class="list">
-      {% for event in agenda.undated_events %}
-        <div class="row">
-          <a href="/agenda/events/{{ event.id }}/edit">{{ event.title }}</a>
-          <span class="badge {{ event.confirmation_status|status_class }}">{{ event.confirmation_status|label }}</span>
         </div>
-      {% else %}
-        <p class="empty">Nenhum item sem data.</p>
-      {% endfor %}
-    </div>
+      </section>
+    </aside>
   </section>
 {% endblock %}

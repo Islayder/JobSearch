@@ -1,40 +1,52 @@
 {% extends "base.html" %}
+{% import "components/ui.html" as ui_components with context %}
 {% block title %}Editar evento - Radar de Vagas{% endblock %}
 {% block content %}
-  <section class="page-title">
-    <div>
-      <h1>Editar evento</h1>
-      <p>{{ event.confirmation_status|label }}</p>
-    </div>
-    <a class="button secondary" href="/agenda">Voltar</a>
-  </section>
+  {% set header_action %}
+    <a class="button button-secondary" href="/agenda">Voltar para agenda</a>
+  {% endset %}
+  {{ ui_components.page_header(title="Editar evento", description=(event.title ~ " · " ~ (event.confirmation_status|label)), action=header_action) }}
 
-  <form class="card" action="/agenda/events/{{ event.id }}/edit" method="post">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="field">
-      <label for="title">Titulo</label>
-      <input id="title" name="title" value="{{ event.title }}" required>
-    </div>
-    <div class="field">
-      <label for="starts_at">Inicio</label>
-      <input id="starts_at" name="starts_at" type="datetime-local">
-    </div>
-    <div class="field">
-      <label for="ends_at">Fim</label>
-      <input id="ends_at" name="ends_at" type="datetime-local">
-    </div>
-    <div class="field">
-      <label for="location">Local</label>
-      <input id="location" name="location" value="{{ event.location or '' }}">
-    </div>
-    <div class="field">
-      <label for="meeting_url">Link</label>
-      <input id="meeting_url" name="meeting_url" value="{{ event.meeting_url or '' }}">
-    </div>
-    <div class="field">
-      <label for="notes">Notas</label>
-      <textarea id="notes" name="notes">{{ event.notes or '' }}</textarea>
-    </div>
-    <button type="submit">Salvar</button>
-  </form>
+  <section class="content-grid two">
+    <form class="card form-card" action="/agenda/events/{{ event.id }}/edit" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2>Dados do compromisso</h2>
+      <div class="form-grid">
+        <div class="field wide">
+          <label for="title">Titulo</label>
+          <input id="title" name="title" value="{{ event.title }}" required>
+        </div>
+        <div class="field">
+          <label for="starts_at">Inicio</label>
+          <input id="starts_at" name="starts_at" type="datetime-local">
+        </div>
+        <div class="field">
+          <label for="ends_at">Fim</label>
+          <input id="ends_at" name="ends_at" type="datetime-local">
+        </div>
+        <div class="field">
+          <label for="location">Local</label>
+          <input id="location" name="location" value="{{ event.location or '' }}">
+        </div>
+        <div class="field">
+          <label for="meeting_url">Link</label>
+          <input id="meeting_url" name="meeting_url" value="{{ event.meeting_url or '' }}">
+        </div>
+        <div class="field wide">
+          <label for="notes">Notas</label>
+          <textarea id="notes" name="notes">{{ event.notes or '' }}</textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit">Salvar</button>
+        <a class="button button-secondary" href="/agenda">Cancelar</a>
+      </div>
+    </form>
+
+    <aside class="card">
+      <h2>Estado</h2>
+      <p><span class="badge {{ event.confirmation_status|status_class }}">{{ event.confirmation_status|label }}</span></p>
+      <p class="muted">A edicao altera apenas dados locais. Nao ha notificacao externa, calendario externo ou candidatura automatica.</p>
+    </aside>
+  </section>
 {% endblock %}

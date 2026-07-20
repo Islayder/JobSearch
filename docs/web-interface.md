@@ -5,6 +5,11 @@ do Radar pelo navegador. Ela e uma camada fina sobre os servicos existentes:
 nao substitui a CLI, nao roda coleta automatica ao abrir e nao envia
 candidaturas.
 
+A interface usa um app shell com sidebar, header, busca rapida, breadcrumbs,
+conteudo principal e footer. O redesign e apenas visual e de experiencia:
+preserva rotas, CSRF, GETs sem mutacao, regras de dominio, compatibilidade,
+coleta, agenda, importador de curriculo e acompanhamento manual.
+
 ## Instalacao
 
 ```powershell
@@ -52,22 +57,28 @@ A tela de perfil permite ajustar configuracoes basicas sem editar YAML.
 
 ## Telas
 
-- Dashboard: fila de revisao, compromissos, candidaturas aguardando retorno,
-  testes/cases, entrevistas, ofertas, vagas recentes, saude de fontes e atalhos.
+- Dashboard: central diaria com saudacao local, resumo dinamico, metricas,
+  fila de revisao, compromissos, candidaturas aguardando retorno, testes/cases,
+  vagas recomendadas, saude de fontes e atalhos.
 - Onboarding: privacidade, timezone, importacao YAML/JSON/TXT, criacao manual,
   importacao revisada de curriculo PDF/DOCX/TXT/Markdown, revisao do perfil,
   ativacao e comparacao inicial de vagas.
-- Vagas: busca textual, filtros, abas, paginacao, detalhe, favoritar,
+- Vagas: busca textual, busca rapida no header, abas, filtros agrupados,
+  chips de filtros ativos, cartoes de vaga, paginacao, detalhe, favoritar,
   descartar, restaurar, registrar candidatura manual e criar evento.
 - Candidaturas: lista filtravel por empresa, status, etapa, plataforma,
   periodo e atalhos de retorno/teste/case/entrevista/oferta/rejeicao/retirada;
-  o detalhe mostra timeline, agenda ligada e botoes de evento do fluxo.
+  o detalhe mostra timeline vertical, agenda ligada, proxima acao e botoes de
+  evento do fluxo.
 - Agenda: calendario mensal real de segunda a domingo, navegacao por mes,
-  filtros por tipo/origem/status/vaga/candidatura, mes em portugues sem depender
-  do locale do sistema, lista limitada ao mes selecionado, itens sem data e
-  transicoes de confirmar, dispensar, concluir e cancelar.
-- Perfil: perfil ativo, versoes, importacao revisada de curriculo, rascunhos,
-  importacao estruturada, criacao manual, ativacao e comparacao em lote.
+  botao de hoje, formulario de novo compromisso, filtros por
+  tipo/origem/status/vaga/candidatura, mes em portugues sem depender do locale
+  do sistema, lista limitada ao mes selecionado, itens sem data e transicoes de
+  confirmar, dispensar, concluir e cancelar.
+- Perfil: perfil ativo, habilidades, evidencias, experiencias, projetos,
+  versoes, importacao revisada de curriculo, rascunhos, importacao estruturada,
+  criacao manual, ativacao e comparacao em lote. Configuracoes locais ficam em
+  area visual separada.
 - Fontes: saude de boards, consultas e execucoes recentes, com acao manual de
   coleta em segundo plano. Itens ignorados geram aviso, mas nao sao apresentados
   automaticamente como execucao parcial.
@@ -94,10 +105,11 @@ macros, referencias externas ou estrutura abusiva sao rejeitados com mensagem
 humana. Nao ha OCR, servico externo, Word, LibreOffice ou Playwright.
 
 Rascunhos de curriculo ficam em `/profile/resume/imports`. A tela de revisao
-mostra candidatos por secao, confianca, explicacao, origem, trecho curto e
-estado. O usuario pode salvar edicoes, confirmar, remover ou restaurar cada
-item. A confirmacao final oferece "Ativar agora" e "Analisar vagas depois";
-nenhuma comparacao roda se a segunda opcao nao for marcada.
+mostra candidatos por secao, indice lateral, resumo de pendencias, confianca,
+explicacao, origem, trecho curto e estado. O usuario pode salvar edicoes,
+confirmar, remover ou restaurar cada item. A confirmacao final oferece "Ativar
+agora" e "Analisar vagas depois"; nenhuma comparacao roda se a segunda opcao
+nao for marcada.
 
 Habilidade digitada sem evidencia explicita e tratada como declarada, nao como
 comprovada. Textarea e linhas estruturadas sao interpretados separadamente e
@@ -111,6 +123,13 @@ ativo, versao corrente das regras de perfil e hash atual do conteudo da vaga.
 Filtros, ordenacao e score exibido ignoram analises historicas. No detalhe, uma
 analise historica ainda fica acessivel, mas aparece como desatualizada quando o
 perfil, as regras ou o conteudo da vaga mudaram.
+
+## Design e Assets
+
+O design system esta documentado em `docs/design-system.md`. Os estilos ficam
+em `src/radar_vagas/web/static/css/`, importados por `app.css`. O JavaScript
+fica em `app.js` e e progressivo. SVGs sao locais ou inline, sem bibliotecas de
+icones externas, CDN, fonte externa, npm ou bundler.
 
 ## Coleta Manual
 
